@@ -21,6 +21,17 @@ ROLE_COLORS = {
 }
 
 
+def configured_openai_api_key() -> str:
+    """Load a server-side API key without exposing it in the browser."""
+    environment_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if environment_key:
+        return environment_key
+    try:
+        return str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+    except (FileNotFoundError, KeyError, AttributeError):
+        return ""
+
+
 st.set_page_config(page_title="AML Graph Intelligence", page_icon="◈", layout="wide")
 st.markdown(
     """
@@ -293,15 +304,22 @@ with agent_tab:
         )
 
     use_openai = mode == "OpenAI Agents SDK"
-    api_key = None
+    api_key = configured_openai_api_key() if use_openai else ""
     model = "gpt-6-astra"
     consent = True
     if use_openai:
         st.warning(
             "OpenAI-режим отправляет вопрос и минимальный контекст выбранных узлов в OpenAI API. "
-            "Ключ используется только для текущего запроса и не сохраняется."
+            "Серверный ключ не передаётся в браузер, ответы остаются grounded на read-only инструментах."
         )
-        api_key = st.text_input("OPENAI_API_KEY", type="password")
+        if api_key:
+            st.success("API key настроен локально на сервере.")
+        else:
+            api_key = st.text_input(
+                "OPENAI_API_KEY",
+                type="password",
+                help="Резервный ввод только для текущей сессии. Для постоянной работы используйте окружение или .streamlit/secrets.toml.",
+            )
         model = st.text_input("Модель", value="gpt-6-astra")
         consent = st.checkbox("Разрешаю передать выбранный аналитический контекст в OpenAI API")
 
