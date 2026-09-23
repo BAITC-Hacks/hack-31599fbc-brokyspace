@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 from pathlib import Path
 
 import networkx as nx
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit.components.v1 as components
 from pyvis.network import Network
 
+from src.agent import AMLAnalystAgent
 
-OUT = Path("out")
+
+OUT = Path(os.getenv("AML_OUT_DIR", "out"))
 ROLE_COLORS = {
     "consolidator": "#8b5cf6", "transit": "#06b6d4", "distributor": "#f59e0b",
     "terminal": "#ef4444", "coordinator": "#10b981", "peripheral": "#64748b",
@@ -46,6 +49,11 @@ def load_outputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFra
     return features, edges, clusters, top, metadata
 
 
+@st.cache_resource
+def load_agent() -> AMLAnalystAgent:
+    return AMLAnalystAgent(OUT)
+
+
 def kzt(value: float) -> str:
     if value >= 1e9:
         return f"{value / 1e9:.2f} млрд ₸"
@@ -74,6 +82,11 @@ def network_html(node_frame: pd.DataFrame, edge_frame: pd.DataFrame) -> str:
         network.add_edge(str(row.source), str(row.target), value=1 + 7 * float(row.sum_kzt) / max_amount,
                          title=f"{kzt(float(row.sum_kzt))}; tx={int(row.n_tx)}")
     return network.generate_html(notebook=False)
+
+
+def network_uri(node_frame: pd.DataFrame, edge_frame: pd.DataFrame) -> str:
+    encoded = base64.b64encode(network_html(node_frame, edge_frame).encode("utf-8")).decode("ascii")
+    return f"data:text/html;base64,{encoded}"
 
 
 try:
@@ -114,6 +127,7 @@ except FileNotFoundError as exc:
             run_pipeline(data_dir, OUT, logger=show_stage)
             progress.update(label="Pipeline завершён", state="complete")
             load_outputs.clear()
+            load_agent.clear()
             st.success("Данные обработаны. Открываю dashboard…")
             st.rerun()
         except Exception as pipeline_error:
@@ -127,8 +141,8 @@ st.markdown('<div class="risk">◈ AML GRAPH INTELLIGENCE</div>', unsafe_allow_h
 st.title("Карта финансовой структуры группы")
 st.caption("Explainable network analytics · directed cash flow · local processing")
 
-overview, search, network_tab, priority_tab, cluster_tab, patterns_tab, method_tab = st.tabs(
-    ["Обзор", "Поиск GID", "Граф", "Приоритет", "Кластеры", "AML-паттерны", "Методология"]
+overview, search, network_tab, priority_tab, cluster_tab, patterns_tab, agent_tab, method_tab = st.tabs(
+    ["Обзор", "Поиск GID", "Граф", "Приоритет", "Кластеры", "AML-паттерны", "AI-аналитик", "Методология"]
 )
 
 with overview:
@@ -196,7 +210,7 @@ with network_tab:
         shown = features[features["cluster_id"].eq(selected_cluster)].nlargest(250, "priority_score")
     legend = " · ".join(f"<span style='color:{color}'>●</span> {role}" for role, color in ROLE_COLORS.items())
     st.markdown(legend, unsafe_allow_html=True)
-    components.html(network_html(shown, edges), height=670, scrolling=False)
+    st.iframe(network_uri(shown, edges), height=670)
 
 with priority_tab:
     limit = st.radio("Показать", [20, 50], horizontal=True)
@@ -239,7 +253,7 @@ with patterns_tab:
             cycle_row = cycles.loc[cycles["cycle_id"].eq(selected_cycle)].iloc[0]
             cycle_gids = str(cycle_row.gids).split(" → ")[:-1]
             cycle_nodes = features[features["gid"].astype(str).isin(cycle_gids)]
-            components.html(network_html(cycle_nodes, edges), height=500, scrolling=False)
+            st.iframe(network_uri(cycle_nodes, edges), height=500)
 
     with route_view:
         st.caption("Маршруты с повторениями в разные дни; порог определяется 75-м percentile среди многодневных связей.")
@@ -258,6 +272,57 @@ with patterns_tab:
         st.caption("TOP-5% composite: всплески активности, rapid forwarding, recurring routes и cycles.")
         st.dataframe(anomalies, hide_index=True, width="stretch", height=600)
 
+with agent_tab:
+    st.subheader("AI AML Analyst")
+    st.caption("Отвечает только по рассчитанным артефактам pipeline и показывает использованные источники.")
+    mode = st.radio("Режим агента", ["Локальный evidence-agent", "OpenAI Agents SDK"], horizontal=True)
+    preset = st.selectbox(
+        "Вопрос",
+        [
+            "Кого из 2 248 клиентов смотреть первым и почему?",
+            "Какие узлы имеют наиболее сильные аномальные паттерны?",
+            "Покажи главные циклы и повторяющиеся маршруты",
+            "Другой вопрос",
+        ],
+    )
+    question = preset
+    if preset == "Другой вопрос":
+        question = st.text_area(
+            "Вопрос аналитику",
+            placeholder="Например: почему GID 100000003684369100 стоит проверить первым?",
+        )
+
+    use_openai = mode == "OpenAI Agents SDK"
+    api_key = None
+    model = "gpt-6-astra"
+    consent = True
+    if use_openai:
+        st.warning(
+            "OpenAI-режим отправляет вопрос и минимальный контекст выбранных узлов в OpenAI API. "
+            "Ключ используется только для текущего запроса и не сохраняется."
+        )
+        api_key = st.text_input("OPENAI_API_KEY", type="password")
+        model = st.text_input("Модель", value="gpt-6-astra")
+        consent = st.checkbox("Разрешаю передать выбранный аналитический контекст в OpenAI API")
+
+    disabled = not question.strip() or (use_openai and (not api_key or not consent))
+    if st.button("Спросить AI-аналитика", type="primary", disabled=disabled, width="stretch"):
+        try:
+            with st.spinner("Агент проверяет графовые факты…"):
+                answer = load_agent().ask(
+                    question, use_openai=use_openai, api_key=api_key, model=model,
+                )
+            with st.chat_message("user"):
+                st.write(question)
+            with st.chat_message("assistant"):
+                st.markdown(answer.text)
+                st.caption(
+                    f"Режим: {answer.mode} · {answer.latency_seconds:.2f}s · "
+                    f"Источники: {', '.join(answer.sources)}"
+                )
+        except Exception as agent_error:
+            st.error(f"Агент не смог ответить: {agent_error}")
+
 with method_tab:
     st.subheader("Методология и ограничения")
     st.markdown("""
@@ -268,5 +333,6 @@ with method_tab:
     - У seed неполон входящий поток, поэтому обычный pass-through для них отключён.
     - Ground truth ролей отсутствует: результат — прозрачная аналитическая гипотеза для проверки человеком.
     - Bonus-паттерны: направленные циклы длиной 2–6, многодневные recurring routes, rapid forwarding и всплески активности.
+    - AI-аналитик использует read-only инструменты над результатами pipeline; локальный режим не требует API и не передаёт данные наружу.
     """)
     st.caption(f"Pipeline runtime: {metadata['runtime_seconds']:.2f}s")

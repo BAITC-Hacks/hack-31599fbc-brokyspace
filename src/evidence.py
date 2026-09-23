@@ -26,8 +26,12 @@ def explain(row: pd.Series) -> str:
         text = (f"Отправляет {int(row.out_deg)} получателям ({_top(row.out_deg_pct)}), {int(row.out_tx)} переводов "
                 f"на {_money(row.out_kzt)} KZT; выраженный fan-out.")
     elif role == "transit":
-        text = (f"Получено {_money(row.in_kzt)}, отправлено {_money(row.out_kzt)} KZT; совпадение потоков "
-                f"{row.pass_through*100:.0f}%, быстрое перенаправление {row.rapid_pass_through*100:.0f}%.")
+        if bool(row.is_seed):
+            text = (f"Seed с неполным входящим потоком; отправлено {_money(row.out_kzt)} KZT "
+                    f"{int(row.out_deg)} получателям, быстрое перенаправление {row.rapid_pass_through*100:.0f}%.")
+        else:
+            text = (f"Получено {_money(row.in_kzt)}, отправлено {_money(row.out_kzt)} KZT; совпадение потоков "
+                    f"{row.pass_through*100:.0f}%, быстрое перенаправление {row.rapid_pass_through*100:.0f}%.")
     elif role == "terminal":
         text = (f"Получено {_money(row.in_kzt)} KZT от {int(row.in_deg)} отправителей, исходящий поток "
                 f"{_money(row.out_kzt)} KZT; средства преимущественно остаются.")
