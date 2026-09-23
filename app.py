@@ -13,9 +13,11 @@ import streamlit as st
 from pyvis.network import Network
 
 from src.agent import AMLAnalystAgent
+from src.documents import CaseDocumentStore
 
 
 OUT = Path(os.getenv("AML_OUT_DIR", "out"))
+DOCUMENT_DIR = Path(os.getenv("AML_DOCUMENT_DIR", "case_documents"))
 ROLE_COLORS = {
     "consolidator": "#8b5cf6", "transit": "#06b6d4", "distributor": "#f59e0b",
     "terminal": "#ef4444", "coordinator": "#10b981", "peripheral": "#64748b",
@@ -126,7 +128,7 @@ def load_outputs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFra
 
 @st.cache_resource
 def load_agent() -> AMLAnalystAgent:
-    return AMLAnalystAgent(OUT)
+    return AMLAnalystAgent(OUT, document_dir=DOCUMENT_DIR)
 
 
 def kzt(value: float) -> str:
@@ -264,8 +266,8 @@ st.sidebar.metric("Период", "Июль 2026")
 st.sidebar.metric("Оборот сети", kzt(float(metadata["eda"]["edge_turnover_kzt"])))
 st.sidebar.caption("Данные обезличены · роли являются аналитическими гипотезами")
 
-overview, search, network_tab, priority_tab, cluster_tab, patterns_tab, agent_tab, method_tab = st.tabs(
-    ["Обзор", "Поиск GID", "Граф", "Приоритет", "Кластеры", "AML-паттерны", "AI-аналитик", "Методология"]
+overview, search, network_tab, priority_tab, cluster_tab, patterns_tab, agent_tab, documents_tab, method_tab = st.tabs(
+    ["Обзор", "Поиск GID", "Граф", "Приоритет", "Кластеры", "AML-паттерны", "AI-аналитик", "Документы", "Методология"]
 )
 
 with overview:
@@ -440,7 +442,10 @@ with patterns_tab:
 with agent_tab:
     st.markdown('<div class="section-kicker">Agentic investigation</div>', unsafe_allow_html=True)
     st.subheader("AI AML Analyst")
-    st.caption("Отвечает только по рассчитанным артефактам pipeline и показывает использованные источники.")
+    st.caption(
+        "Отвечает по рассчитанным артефактам pipeline и локальному досье, всегда показывает источники "
+        "и отделяет непроверенный текст документов от графовых фактов."
+    )
     mode = st.radio("Режим агента", ["Локальный evidence-agent", "OpenAI Agents SDK"], horizontal=True)
     preset = st.selectbox(
         "Вопрос",
@@ -464,7 +469,7 @@ with agent_tab:
     consent = True
     if use_openai:
         st.warning(
-            "OpenAI-режим отправляет вопрос и минимальный контекст выбранных узлов в OpenAI API. "
+            "OpenAI-режим отправляет вопрос и минимальный контекст выбранных узлов или найденный фрагмент документа в OpenAI API. "
             "Серверный ключ не передаётся в браузер, ответы остаются grounded на read-only инструментах."
         )
         if api_key:
@@ -495,6 +500,93 @@ with agent_tab:
                 )
         except Exception as agent_error:
             st.error(f"Агент не смог ответить: {agent_error}")
+
+with documents_tab:
+    st.markdown('<div class="section-kicker">Case evidence</div>', unsafe_allow_html=True)
+    st.subheader("Документы дела")
+    st.caption(
+        "Добавляйте внешние PDF, DOCX, TXT, Markdown, CSV и JSON. Файлы сохраняются локально, "
+        "не меняют рассчитанные роли или priority score и рассматриваются как непроверенный контекст аналитика."
+    )
+    st.info(
+        "Лимит — 15 MB на файл. Одинаковые файлы определяются по SHA-256 и не дублируются. "
+        "Для сканированных PDF без текстового слоя требуется предварительный OCR."
+    )
+    document_store = CaseDocumentStore(DOCUMENT_DIR)
+    uploads = st.file_uploader(
+        "Выберите документы",
+        type=["pdf", "docx", "txt", "md", "csv", "json"],
+        accept_multiple_files=True,
+        key="case-document-upload",
+        help="Документы хранятся только в локальной папке case_documents, исключённой из Git.",
+    )
+    if st.button(
+        "Добавить в досье",
+        type="primary",
+        disabled=not uploads,
+        key="add-case-documents",
+    ):
+        known_gids = set(features["gid"].astype(str))
+        added = 0
+        for uploaded in uploads:
+            try:
+                record, created = document_store.add_document(
+                    uploaded.name, uploaded.getvalue(), known_gids=known_gids
+                )
+                if created:
+                    added += 1
+                    st.success(
+                        f"{record.filename}: добавлен; извлечено {record.text_chars:,} символов, "
+                        f"GID из графа — {len(record.detected_gids)}."
+                    )
+                else:
+                    st.info(f"{record.filename}: такой файл уже есть в досье.")
+            except ValueError as document_error:
+                st.error(f"{uploaded.name}: {document_error}")
+        if added:
+            load_agent.clear()
+
+    documents = document_store.list_documents()
+    st.markdown("#### Реестр документов")
+    if documents:
+        registry = pd.DataFrame(
+            [
+                {
+                    "Файл": item.filename,
+                    "Формат": item.extension.removeprefix(".").upper(),
+                    "Размер, KB": round(item.size_bytes / 1024, 1),
+                    "Добавлен, UTC": item.added_at.replace("T", " ")[:19],
+                    "Символов": item.text_chars,
+                    "GID из графа": len(item.detected_gids),
+                    "SHA-256": item.sha256[:12] + "…",
+                }
+                for item in documents
+            ]
+        )
+        st.dataframe(registry, hide_index=True, width="stretch")
+        document_query = st.text_input(
+            "Поиск по документам",
+            placeholder="Введите GID, имя, организацию или фрагмент текста",
+            key="document-search",
+        )
+        if document_query.strip():
+            matches = document_store.search(document_query, limit=10)
+            if matches:
+                st.caption(f"Найдено документов: {len(matches)}")
+                for match in matches:
+                    with st.expander(f"{match['filename']} · релевантность {match['score']}"):
+                        st.write(match["snippet"])
+                        if match["detected_gids"]:
+                            st.caption("GID из графа: " + ", ".join(match["detected_gids"]))
+            else:
+                st.warning("Совпадений в извлечённом тексте не найдено.")
+    else:
+        st.warning("В досье пока нет документов. Добавьте первый файл выше.")
+
+    st.caption(
+        "В локальном режиме AI использует найденные фрагменты без передачи данных наружу. "
+        "В OpenAI-режиме документный фрагмент может быть отправлен API только после явного согласия в разделе AI-аналитика."
+    )
 
 with method_tab:
     st.markdown('<div class="section-kicker">Transparent methodology</div>', unsafe_allow_html=True)

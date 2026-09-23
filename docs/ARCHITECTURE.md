@@ -18,6 +18,9 @@ flowchart LR
     K --> L[CSV / Parquet / metadata]
     L --> M[Streamlit dashboard]
     L --> N[Read-only AML agent]
+    Q[External case documents] --> R[Local extraction + SHA-256 registry]
+    R --> M
+    R --> N
     N --> O[Local evidence answer]
     N -. explicit opt-in .-> P[OpenAI Agents SDK]
 ```
@@ -37,12 +40,13 @@ flowchart LR
 | `src/evidence.py` | Числовое объяснение роли ≤200 символов |
 | `src/completeness.py` | Белые пятна наблюдения и следующий запрос по каждому GID |
 | `src/agent.py` | Read-only инструменты, ответы аналитику, audit log |
+| `src/documents.py` | Локальная загрузка PDF/DOCX/text, дедупликация, извлечение текста, GID-ссылки и поиск |
 | `src/validation.py` | Машинные контракты обязательных и bonus outputs |
 | `app.py` | Demo-first интерфейс без бизнес-логики расчётов |
 
 ## Agentic AI
 
-`AMLAnalystAgent` имеет четыре read-only инструмента: рейтинг узлов, карточка GID, карточка кластера и AML-паттерны GID. Локальный evidence-agent всегда доступен и не передаёт данные наружу. OpenAI Agents SDK — опциональный режим с явным согласием пользователя; модель получает только строки, возвращённые выбранным инструментом, а не весь датасет.
+`AMLAnalystAgent` имеет пять read-only инструментов: рейтинг узлов, карточка GID, карточка кластера, AML-паттерны GID и поиск по локальным документам дела. Локальный evidence-agent всегда доступен и не передаёт данные наружу. OpenAI Agents SDK — опциональный режим с явным согласием пользователя; модель получает только строки, возвращённые выбранным инструментом, а не весь датасет или файл целиком. Документные фрагменты всегда помечаются как непроверенный пользовательский контекст и не могут переопределять pipeline-факты или инструкции агента.
 
 Защита от галлюцинаций:
 

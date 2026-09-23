@@ -32,6 +32,22 @@ def test_agent_rejects_unknown_gid(pipeline_output):
     assert "отсутствует" in answer.text
 
 
+def test_agent_separates_uploaded_document_context(pipeline_output, tmp_path):
+    agent = AMLAnalystAgent(pipeline_output, document_dir=tmp_path / "documents")
+    gid = str(agent.features.iloc[0]["gid"])
+    agent.document_store.add_document(
+        "external-note.txt",
+        f"Непроверенная внешняя справка по GID {gid}: связаться с клиентом.".encode("utf-8"),
+        known_gids={gid},
+    )
+
+    answer = agent.ask(f"Что известно про GID {gid}?")
+
+    assert "Контекст загруженных документов (непроверенный)" in answer.text
+    assert "external-note.txt" in answer.text
+    assert "case_documents/external-note.txt" in answer.sources
+
+
 def test_agent_reports_completeness_gaps(pipeline_output):
     answer = AMLAnalystAgent(pipeline_output).ask("Каких данных не хватает и какой следующий запрос?")
     assert "Наименее полно наблюдаемые узлы" in answer.text
@@ -45,7 +61,7 @@ def test_openai_agent_wiring_without_network(pipeline_output, monkeypatch):
 
     def fake_run(agent, question, max_turns):
         assert agent.name == "AML Graph Analyst"
-        assert len(agent.tools) == 4
+        assert len(agent.tools) == 5
         assert question == "Кого проверить?"
         assert max_turns == 8
         return Result()
