@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+.streamlit/secrets.local.toml
+.env
+.env.*
+case_documents/
+out/*
+!out/nodes_roles.csv
+!out/clusters.csv
+!out/top_nodes.csv
