@@ -10,11 +10,8 @@ def test_dashboard_starts_without_errors(pipeline_output, monkeypatch):
     app = AppTest.from_file(Path(__file__).parents[1] / "app.py").run(timeout=60)
     assert len(app.exception) == 0
     assert len(app.error) == 0
-    theme = next(
-        widget for widget in app.selectbox
-        if list(widget.options) == ["Midnight Signal", "Capital Ivory", "Electric Market"]
+    assert any("Финансовый обзор" in subheader.value for subheader in app.subheader)
+    assert not any(
+        list(widget.options) == ["Midnight Signal", "Capital Ivory", "Electric Market"]
+        for widget in app.selectbox
     )
-    theme.select("Capital Ivory")
-    app.run(timeout=60)
-    assert len(app.exception) == 0
-    assert len(app.error) == 0
