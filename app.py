@@ -14,6 +14,7 @@ from pyvis.network import Network
 
 from src.agent import AMLAnalystAgent
 from src.documents import CaseDocumentStore
+from src.ui import plot_layout, theme_selector
 
 
 OUT = Path(os.getenv("AML_OUT_DIR", "out"))
@@ -22,22 +23,6 @@ ROLE_COLORS = {
     "consolidator": "#8b5cf6", "transit": "#06b6d4", "distributor": "#f59e0b",
     "terminal": "#ef4444", "coordinator": "#10b981", "peripheral": "#64748b",
 }
-
-THEME = {
-    "bg": "#F4F7F5",
-    "surface": "#FFFFFF",
-    "surface2": "#EDF5F0",
-    "text": "#17211B",
-    "muted": "#6E7C74",
-    "accent": "#16B86A",
-    "accent2": "#5D86EA",
-    "border": "#DFE8E2",
-    "graph_bg": "#FFFFFF",
-    "graph_text": "#23312A",
-    "edge": "#A6B8AE",
-    "plot": "plotly_white",
-}
-
 
 def configured_openai_api_key() -> str:
     """Load a server-side API key without exposing it in the browser."""
@@ -56,71 +41,73 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st.sidebar.markdown(
+    '<div class="side-brand"><span>₸</span><div><b>MoneyGraph</b><small>аналитика переводов</small></div></div>',
+    unsafe_allow_html=True,
+)
+THEME_MODE, RESOLVED_THEME, THEME = theme_selector(st)
 PLOT_TEMPLATE = THEME["plot"]
 NETWORK_BG = THEME["graph_bg"]
 NETWORK_TEXT = THEME["graph_text"]
 EDGE_COLOR = THEME["edge"]
 st.sidebar.markdown(
-    '<div class="side-brand"><span>₸</span><div><b>MoneyGraph</b><small>аналитика переводов</small></div></div>',
-    unsafe_allow_html=True,
-)
-st.sidebar.markdown(
-    '<div class="system-status"><span class="status-dot"></span><div><b>Данные готовы</b><small>защищённая локальная обработка</small></div></div>',
+    f'<div class="system-status"><span class="status-dot"></span><div><b>Данные готовы</b><small>локальная обработка · тема: {THEME_MODE}</small></div></div>',
     unsafe_allow_html=True,
 )
 st.markdown(
     f"""
     <style>
-    :root{{--mg-bg:{THEME['bg']};--mg-surface:{THEME['surface']};--mg-surface-2:{THEME['surface2']};--mg-text:{THEME['text']};--mg-muted:{THEME['muted']};--mg-accent:{THEME['accent']};--mg-accent-2:{THEME['accent2']};--mg-border:{THEME['border']};}}
+    :root{{--mg-bg:{THEME['bg']};--mg-surface:{THEME['surface']};--mg-raised:{THEME['surface_raised']};--mg-surface-2:{THEME['surface2']};--mg-surface-3:{THEME['surface3']};--mg-text:{THEME['text']};--mg-muted:{THEME['muted']};--mg-accent:{THEME['accent']};--mg-on-accent:{THEME['on_accent']};--mg-accent-hover:{THEME['accent_hover']};--mg-accent-soft:{THEME['accent_soft']};--mg-accent-text:{THEME['accent_text']};--mg-accent-2:{THEME['accent2']};--mg-border:{THEME['border']};--mg-shadow:{THEME['shadow']};--mg-bank-body:{THEME['bank_body']};--mg-bank-column:{THEME['bank_column']};}}
     html,body,[class*="css"]{{font-family:Inter,"Segoe UI",Arial,sans-serif}}
-    .stApp{{background:var(--mg-bg);color:var(--mg-text)}}
+    .stApp{{--background-color:var(--mg-bg);--secondary-background-color:var(--mg-surface-2);--text-color:var(--mg-text);--primary-color:var(--mg-accent);background:var(--mg-bg);color:var(--mg-text)}}
     .block-container{{padding-top:1rem;max-width:1480px;padding-bottom:4rem}}
-    header[data-testid="stHeader"]{{background:rgba(244,247,245,.88);backdrop-filter:blur(12px)}}
-    [data-testid="stSidebar"]{{background:#fff;border-right:1px solid var(--mg-border)}}
+    header[data-testid="stHeader"]{{background:color-mix(in srgb,var(--mg-bg) 88%,transparent);backdrop-filter:blur(12px)}}
+    [data-testid="stSidebar"]{{background:var(--mg-surface);border-right:1px solid var(--mg-border)}}
     .side-brand{{display:flex;gap:.75rem;align-items:center;padding:.45rem .1rem 1.15rem;color:var(--mg-text)}}
-    .side-brand>span{{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:var(--mg-accent);color:#fff;font-size:1.18rem;font-weight:800}}
+    .side-brand>span{{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:var(--mg-accent);color:var(--mg-on-accent);font-size:1.18rem;font-weight:800}}
     .side-brand b{{font-size:1.02rem;letter-spacing:-.02em}}.side-brand small,.system-status small{{display:block;color:var(--mg-muted);font-size:.72rem;margin-top:.1rem}}
-    .system-status{{display:flex;align-items:center;gap:.7rem;margin-top:.6rem;padding:.85rem;border:1px solid var(--mg-border);border-radius:15px;background:#f8faf9;color:var(--mg-text)}}
+    .system-status{{display:flex;align-items:center;gap:.7rem;margin-top:.6rem;padding:.85rem;border:1px solid var(--mg-border);border-radius:15px;background:var(--mg-surface-2);color:var(--mg-text)}}
     .status-dot{{width:9px;height:9px;border-radius:50%;background:var(--mg-accent);box-shadow:0 0 0 4px rgba(22,184,106,.11)}}
-    .hero-shell{{position:relative;overflow:hidden;border:1px solid var(--mg-border);border-radius:34px;padding:1rem clamp(1.5rem,4.2vw,4.5rem) clamp(2rem,4vw,4rem);margin:.15rem 0 1rem;background:linear-gradient(125deg,#fff 0%,#fff 48%,#edf8f2 78%,#eaf2ff 100%);box-shadow:0 18px 60px rgba(28,56,40,.06)}}
-    .product-nav{{position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:.45rem 0 2.1rem;border-bottom:1px solid rgba(31,58,43,.08)}}
-    .product-logo{{display:flex;align-items:center;gap:.55rem;font-weight:800;font-size:1rem}}.product-logo i{{display:grid;place-items:center;width:31px;height:31px;border-radius:10px;background:var(--mg-accent);color:#fff;font-style:normal}}
-    .product-links{{display:flex;gap:1.65rem;color:var(--mg-muted);font-size:.78rem}}.product-links span:first-child{{color:var(--mg-text);font-weight:700}}
+    .hero-shell{{position:relative;overflow:hidden;border:1px solid var(--mg-border);border-radius:34px;padding:1rem clamp(1.5rem,4.2vw,4.5rem) clamp(2rem,4vw,4rem);margin:.15rem 0 1rem;background:linear-gradient(125deg,var(--mg-surface) 0%,var(--mg-surface) 48%,var(--mg-accent-soft) 78%,color-mix(in srgb,var(--mg-accent-2) 15%,var(--mg-surface)) 100%);box-shadow:0 18px 60px var(--mg-shadow)}}
+    .product-head{{position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:.45rem 0 2.1rem;border-bottom:1px solid var(--mg-border)}}
+    .product-logo{{display:flex;align-items:center;gap:.55rem;font-weight:800;font-size:1rem}}.product-logo i{{display:grid;place-items:center;width:31px;height:31px;border-radius:10px;background:var(--mg-accent);color:var(--mg-on-accent);font-style:normal}}.product-meta{{color:var(--mg-muted);font-size:.78rem}}
     .hero-grid{{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(390px,.95fr);gap:2rem;align-items:center;min-height:410px}}
-    .eyebrow{{display:inline-flex;align-items:center;gap:.5rem;padding:.48rem .7rem;border-radius:999px;background:#eaf8f0;color:#087944;font-size:.7rem;font-weight:750;margin-bottom:1.25rem}}
+    .eyebrow{{display:inline-flex;align-items:center;gap:.5rem;padding:.48rem .7rem;border-radius:999px;background:var(--mg-accent-soft);color:var(--mg-accent-text);font-size:.7rem;font-weight:750;margin-bottom:1.25rem}}
     .eyebrow::before{{content:"";width:7px;height:7px;border-radius:50%;background:var(--mg-accent)}}
     .hero-title{{margin:0;color:var(--mg-text);font-size:clamp(2.65rem,5vw,5.4rem);line-height:.96;letter-spacing:-.06em;font-weight:750;max-width:780px}}.hero-title span{{color:var(--mg-accent)}}
     .hero-copy{{max-width:650px;color:var(--mg-muted);font-size:1.03rem;line-height:1.65;margin:1.35rem 0 0}}
-    .hero-chips{{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.5rem}}.hero-chip{{padding:.58rem .82rem;border-radius:12px;border:1px solid var(--mg-border);background:rgba(255,255,255,.76);font-size:.74rem;color:var(--mg-text)}}
-    .hero-action{{display:inline-flex;margin-top:1.4rem;padding:.72rem 1.05rem;border-radius:13px;background:var(--mg-accent);color:#fff;font-weight:750;font-size:.8rem}}
+    .hero-chips{{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.5rem}}.hero-chip{{padding:.58rem .82rem;border-radius:12px;border:1px solid var(--mg-border);background:color-mix(in srgb,var(--mg-raised) 84%,transparent);font-size:.74rem;color:var(--mg-text)}}
     .bank-scene{{position:relative;height:390px;perspective:1000px;transform-style:preserve-3d}}
     .bank-floor{{position:absolute;left:8%;right:4%;bottom:25px;height:90px;border-radius:50%;background:radial-gradient(ellipse,rgba(47,114,76,.16),rgba(47,114,76,0) 68%);transform:rotateX(70deg)}}
     .bank-world{{position:absolute;left:50%;top:52%;width:280px;height:230px;transform-style:preserve-3d;transform:translate(-50%,-48%) rotateX(5deg) rotateY(-12deg);animation:bankFloat 5s ease-in-out infinite}}
     .bank-roof{{position:absolute;left:20px;top:0;width:240px;height:72px;background:linear-gradient(135deg,#1ecb7a,#0ca45b);clip-path:polygon(50% 0,100% 82%,94% 100%,6% 100%,0 82%);filter:drop-shadow(0 14px 12px rgba(15,107,62,.16));transform:translateZ(24px)}}
     .bank-roof::after{{content:"₸";position:absolute;left:111px;top:24px;color:#fff;font-size:24px;font-weight:850}}
-    .bank-body{{position:absolute;left:35px;top:68px;width:210px;height:132px;border-radius:5px;background:linear-gradient(90deg,#eef4f0,#fff 22%,#f5f8f6);box-shadow:22px 20px 35px rgba(22,71,45,.16);transform:translateZ(8px)}}
-    .bank-columns{{position:absolute;inset:14px 19px 18px;display:flex;justify-content:space-between}}.bank-columns i{{width:22px;border-radius:4px;background:linear-gradient(90deg,#dce6e0,#fff,#d5e1da);box-shadow:0 6px 0 #c9d7cf}}
+    .bank-body{{position:absolute;left:35px;top:68px;width:210px;height:132px;border-radius:5px;background:linear-gradient(90deg,var(--mg-bank-column),var(--mg-bank-body) 22%,var(--mg-surface-2));box-shadow:22px 20px 35px var(--mg-shadow);transform:translateZ(8px)}}
+    .bank-columns{{position:absolute;inset:14px 19px 18px;display:flex;justify-content:space-between}}.bank-columns i{{width:22px;border-radius:4px;background:linear-gradient(90deg,var(--mg-bank-column),var(--mg-bank-body),var(--mg-bank-column));box-shadow:0 6px 0 var(--mg-surface-3)}}
     .bank-door{{position:absolute;left:88px;bottom:0;width:38px;height:54px;border-radius:12px 12px 0 0;background:#21342a;box-shadow:inset 0 0 0 6px #324b3e}}
-    .bank-steps{{position:absolute;left:25px;top:194px;width:230px;height:38px;background:linear-gradient(#e3ebe6 0 32%,#d5e1da 33% 65%,#c8d6ce 66%);clip-path:polygon(8% 0,92% 0,100% 100%,0 100%);transform:translateZ(12px)}}
+    .bank-steps{{position:absolute;left:25px;top:194px;width:230px;height:38px;background:linear-gradient(var(--mg-bank-body) 0 32%,var(--mg-bank-column) 33% 65%,var(--mg-surface-3) 66%);clip-path:polygon(8% 0,92% 0,100% 100%,0 100%);transform:translateZ(12px)}}
     .coin{{position:absolute;display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:linear-gradient(145deg,#ffd66b,#f6ae24);border:5px solid #ffe396;color:#7e5612;font-weight:900;box-shadow:0 12px 25px rgba(152,106,20,.18);animation:coinFloat 4s ease-in-out infinite}}
     .coin-one{{right:8%;top:15%;animation-delay:-1s}}.coin-two{{left:4%;bottom:20%;width:38px;height:38px;animation-delay:-2.4s}}
-    .transfer-card{{position:absolute;padding:.65rem .8rem;border:1px solid rgba(255,255,255,.9);border-radius:14px;background:rgba(255,255,255,.87);box-shadow:0 14px 35px rgba(26,67,44,.11);backdrop-filter:blur(10px);font-size:.7rem;color:var(--mg-muted);animation:cardFloat 5.5s ease-in-out infinite}}.transfer-card b{{display:block;color:var(--mg-text);font-size:.92rem;margin-top:.14rem}}
+    .transfer-card{{position:absolute;padding:.65rem .8rem;border:1px solid var(--mg-border);border-radius:14px;background:color-mix(in srgb,var(--mg-raised) 88%,transparent);box-shadow:0 14px 35px var(--mg-shadow);backdrop-filter:blur(10px);font-size:.7rem;color:var(--mg-muted);animation:cardFloat 5.5s ease-in-out infinite}}.transfer-card b{{display:block;color:var(--mg-text);font-size:.92rem;margin-top:.14rem}}
     .transfer-a{{left:0;top:12%}}.transfer-b{{right:0;bottom:12%;animation-delay:-2.7s}}.transfer-dot{{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--mg-accent);margin-right:.35rem}}
     .flow{{position:absolute;height:2px;background:linear-gradient(90deg,transparent,var(--mg-accent),transparent);opacity:.55;animation:flowPulse 2.6s linear infinite}}.flow-a{{left:10%;right:13%;top:34%;transform:rotate(8deg)}}.flow-b{{left:16%;right:5%;bottom:28%;transform:rotate(-10deg);animation-delay:-1.2s}}
-    .risk-float{{position:absolute;right:4%;top:4%;padding:.55rem .68rem;border-radius:12px;background:#fff;border:1px solid var(--mg-border);font-size:.66rem;color:var(--mg-muted);box-shadow:0 10px 30px rgba(28,56,40,.08)}}.risk-float b{{display:block;color:var(--mg-text);font-size:.86rem;margin-top:.12rem}}
-    .insight-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin:0 0 1.25rem}}.insight-item{{border:1px solid var(--mg-border);border-radius:18px;background:#fff;padding:1.05rem 1.15rem;color:var(--mg-text)}}.insight-item small{{display:block;color:var(--mg-muted);font-size:.68rem;margin-bottom:.42rem}}.insight-item b{{font-size:1.16rem;letter-spacing:-.025em}}
-    [data-testid="stMetric"]{{background:#fff;border:1px solid var(--mg-border);padding:16px 17px;border-radius:17px;box-shadow:none}}[data-testid="stMetricLabel"]{{color:var(--mg-muted)}}[data-testid="stMetricValue"]{{color:var(--mg-text);letter-spacing:-.035em;font-size:clamp(1.45rem,2vw,2.1rem)}}
-    div[data-testid="stDataFrame"]{{border:1px solid var(--mg-border);border-radius:16px;overflow:hidden;box-shadow:none}}
-    .stTabs [data-baseweb="tab-list"]{{gap:.15rem;background:#fff;border:1px solid var(--mg-border);border-radius:16px;padding:.34rem;overflow-x:auto}}.stTabs [data-baseweb="tab"]{{height:40px;border-radius:11px;color:var(--mg-muted);padding:0 .82rem;white-space:nowrap;font-size:.83rem}}.stTabs [aria-selected="true"]{{background:#e8f7ef!important;color:#087944!important;font-weight:750}}.stTabs [data-baseweb="tab-highlight"]{{display:none}}
-    .stButton>button[kind="primary"]{{border:0;border-radius:13px;background:var(--mg-accent);color:#fff;font-weight:750;box-shadow:none}}.stButton>button:not([kind="primary"]){{border-radius:13px;border-color:var(--mg-border);background:#fff;color:var(--mg-text)}}
-    div[data-baseweb="select"]>div,.stTextInput input,.stTextArea textarea{{background:#fff!important;border-color:var(--mg-border)!important;color:var(--mg-text)!important;border-radius:12px!important}}
-    .node-card{{background:#fff;border:1px solid var(--mg-border);border-left:4px solid var(--mg-accent);padding:18px;border-radius:16px;color:var(--mg-text);box-shadow:none}}
-    .risk{{color:var(--mg-accent);font-weight:800}}h1,h2,h3,p,label{{color:var(--mg-text)}}.section-kicker{{color:#0b8f52;font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin-top:.35rem}}
+    .risk-float{{position:absolute;right:4%;top:4%;padding:.55rem .68rem;border-radius:12px;background:var(--mg-raised);border:1px solid var(--mg-border);font-size:.66rem;color:var(--mg-muted);box-shadow:0 10px 30px var(--mg-shadow)}}.risk-float b{{display:block;color:var(--mg-text);font-size:.86rem;margin-top:.12rem;overflow-wrap:anywhere}}
+    .insight-strip{{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin:0 0 1.25rem}}.insight-item{{border:1px solid var(--mg-border);border-radius:18px;background:var(--mg-surface);padding:1.05rem 1.15rem;color:var(--mg-text)}}.insight-item small{{display:block;color:var(--mg-muted);font-size:.68rem;margin-bottom:.42rem}}.insight-item b{{font-size:1.16rem;letter-spacing:-.025em}}
+    [data-testid="stMetric"]{{background:var(--mg-surface);border:1px solid var(--mg-border);padding:16px 17px;border-radius:17px;box-shadow:none}}[data-testid="stMetricLabel"]{{color:var(--mg-muted)}}[data-testid="stMetricValue"]{{color:var(--mg-text);letter-spacing:-.035em;font-size:clamp(1.45rem,2vw,2.1rem);overflow-wrap:anywhere}}
+    div[data-testid="stDataFrame"]{{background:var(--mg-surface);border:1px solid var(--mg-border);border-radius:16px;overflow:hidden;box-shadow:none}}
+    .stTabs [data-baseweb="tab-list"]{{gap:.15rem;background:var(--mg-surface);border:1px solid var(--mg-border);border-radius:16px;padding:.34rem;overflow-x:auto}}.stTabs [data-baseweb="tab"]{{height:40px;border:0!important;border-bottom:2px solid transparent!important;border-radius:11px;color:var(--mg-muted);padding:0 .82rem;white-space:nowrap;font-size:.83rem}}.stTabs [aria-selected="true"]{{background:var(--mg-accent-soft)!important;color:var(--mg-accent-text)!important;border-bottom-color:var(--mg-accent)!important;font-weight:750}}.stTabs [data-baseweb="tab-highlight"]{{display:none!important;background:var(--mg-accent)!important}}.stTabs [data-baseweb="tab-border"]{{background:var(--mg-border)!important}}
+    .stButton>button[kind="primary"]{{border:0;border-radius:13px;background:var(--mg-accent);color:var(--mg-on-accent);font-weight:750;box-shadow:none}}.stButton>button[kind="primary"]:hover{{background:var(--mg-accent-hover)}}.stButton>button:not([kind="primary"]),.stDownloadButton>button{{border-radius:13px;border-color:var(--mg-border);background:var(--mg-surface);color:var(--mg-text)}}.stButton>button:not([kind="primary"]):hover,.stDownloadButton>button:hover{{border-color:var(--mg-accent);background:var(--mg-surface-2);color:var(--mg-text)}}button:not(:disabled),[role="tab"],label[for]{{cursor:pointer}}button:disabled{{cursor:not-allowed!important;opacity:.55}}
+    button:focus-visible,input:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible{{outline:3px solid color-mix(in srgb,var(--mg-accent) 45%,transparent)!important;outline-offset:2px}}
+    div[data-baseweb="select"]>div,.stTextInput input,.stTextArea textarea,[data-baseweb="base-input"]{{background:var(--mg-surface)!important;border-color:var(--mg-border)!important;color:var(--mg-text)!important;border-radius:12px!important}}
+    [data-testid="stFileUploaderDropzone"]{{background:var(--mg-surface-2)!important;border:1px dashed var(--mg-border)!important;border-radius:16px!important;color:var(--mg-text)!important}}[data-testid="stFileUploaderDropzone"] button{{background:var(--mg-accent)!important;color:var(--mg-on-accent)!important;border:0!important;font-size:0!important}}[data-testid="stFileUploaderDropzone"] button::after{{content:"Выбрать файлы";font-size:.8rem}}[data-testid="stFileUploaderDropzoneInstructions"]>div{{font-size:0}}[data-testid="stFileUploaderDropzoneInstructions"]>div::before{{content:"Перетащите файлы сюда или выберите на компьютере";font-size:.86rem;color:var(--mg-text)}}[data-testid="stFileUploaderDropzoneInstructions"] small{{font-size:0}}[data-testid="stFileUploaderDropzoneInstructions"] small::after{{content:"PDF, DOCX, TXT, MD, CSV, JSON, XLSX, XLS и Parquet · до 15 MB";font-size:.72rem;color:var(--mg-muted)}}
+    [data-testid="stAlert"],div[data-baseweb="popover"],div[data-baseweb="menu"]{{background:var(--mg-raised)!important;color:var(--mg-text)!important;border-color:var(--mg-border)!important}}[data-testid="stExpander"]{{background:var(--mg-surface);border-color:var(--mg-border)!important}}
+    .node-card{{background:var(--mg-surface);border:1px solid var(--mg-border);border-left:4px solid var(--mg-accent);padding:18px;border-radius:16px;color:var(--mg-text);box-shadow:none;overflow-wrap:anywhere}}
+    .risk{{color:var(--mg-accent-text);font-weight:800}}h1,h2,h3,p,label{{color:var(--mg-text)}}.section-kicker{{color:var(--mg-accent-text);font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin-top:.35rem}}
     @keyframes bankFloat{{0%,100%{{transform:translate(-50%,-48%) rotateX(5deg) rotateY(-12deg) translateY(0)}}50%{{transform:translate(-50%,-48%) rotateX(7deg) rotateY(-7deg) translateY(-10px)}}}}
     @keyframes coinFloat{{0%,100%{{transform:translateY(0) rotateY(0)}}50%{{transform:translateY(-14px) rotateY(180deg)}}}}
     @keyframes cardFloat{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-9px)}}}}
     @keyframes flowPulse{{0%{{opacity:.15;filter:saturate(.7)}}50%{{opacity:.75;filter:saturate(1.3)}}100%{{opacity:.15;filter:saturate(.7)}}}}
-    @media(max-width:980px){{.hero-grid{{grid-template-columns:1fr}}.bank-scene{{height:330px}}.product-links{{display:none}}.insight-strip{{grid-template-columns:repeat(2,1fr)}}}}
+    @media(max-width:980px){{.hero-grid{{grid-template-columns:1fr}}.bank-scene{{height:330px}}.product-meta{{display:none}}.insight-strip{{grid-template-columns:repeat(2,1fr)}}}}
     @media(max-width:560px){{.hero-shell{{border-radius:24px;padding:1rem 1.15rem 1.8rem}}.hero-title{{font-size:2.65rem}}.bank-scene{{height:285px;transform:scale(.88)}}.insight-strip{{grid-template-columns:1fr 1fr}}}}
     @media(prefers-reduced-motion:reduce){{.bank-world,.coin,.transfer-card,.flow{{animation:none!important}}}}
     </style>
@@ -156,6 +143,32 @@ def kzt(value: float) -> str:
     return f"{value:,.0f} ₸"
 
 
+def polish_chart(figure):
+    figure.update_layout(**plot_layout(THEME))
+    return figure
+
+
+def themed_table(frame: pd.DataFrame):
+    return frame.style.set_properties(
+        **{
+            "background-color": THEME["surface"],
+            "color": THEME["text"],
+            "border-color": THEME["border"],
+        }
+    ).set_table_styles(
+        [
+            {
+                "selector": "th",
+                "props": [
+                    ("background-color", THEME["surface2"]),
+                    ("color", THEME["text"]),
+                    ("border-color", THEME["border"]),
+                ],
+            }
+        ]
+    )
+
+
 def render_hero(metadata: dict, top_nodes: pd.DataFrame, cluster_count: int) -> None:
     eda = metadata["eda"]
     leader = top_nodes.iloc[0]
@@ -168,9 +181,9 @@ def render_hero(metadata: dict, top_nodes: pd.DataFrame, cluster_count: int) -> 
     st.markdown(
         f"""
         <section class="hero-shell">
-          <div class="product-nav">
+          <div class="product-head">
             <div class="product-logo"><i>₸</i><span>MoneyGraph</span></div>
-            <div class="product-links"><span>Обзор</span><span>Переводы</span><span>Клиенты</span><span>Кластеры</span><span>Методология</span></div>
+            <div class="product-meta">Финансовый мониторинг · {int(eda['nodes']):,} клиентов</div>
           </div>
           <div class="hero-grid">
             <div>
@@ -182,7 +195,6 @@ def render_hero(metadata: dict, top_nodes: pd.DataFrame, cluster_count: int) -> 
                 <span class="hero-chip">{cluster_count} кластеров</span>
                 <span class="hero-chip">Расчёт {runtime:.2f} сек.</span>
               </div>
-              <span class="hero-action">Смотреть движение денег →</span>
             </div>
             <div class="bank-scene" role="img" aria-label="Анимированная модель банка и денежных переводов">
               <div class="bank-floor"></div>
@@ -295,7 +307,9 @@ except FileNotFoundError as exc:
 render_hero(metadata, top_nodes, len(clusters))
 st.sidebar.divider()
 st.sidebar.caption("ФИНАНСОВЫЙ ОБЗОР")
-st.sidebar.metric("Период", "Июль 2026")
+period_start = pd.Timestamp(metadata["eda"]["period_start"]).strftime("%d.%m.%y")
+period_end = pd.Timestamp(metadata["eda"]["period_end"]).strftime("%d.%m.%y")
+st.sidebar.metric("Период", f"{period_start}–{period_end}")
 st.sidebar.metric("Оборот сети", kzt(float(metadata["eda"]["edge_turnover_kzt"])))
 st.sidebar.caption("Данные обезличены · расчёты выполняются локально")
 
@@ -333,7 +347,7 @@ with overview:
             template=PLOT_TEMPLATE,
         )
         fig.update_layout(showlegend=False, margin=dict(l=12, r=12, t=55, b=12))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(polish_chart(fig), width="stretch")
     with right:
         fig = px.scatter(
             route_stats,
@@ -344,11 +358,11 @@ with overview:
             hover_name="Маршрут",
             title="Частота и объём переводов",
             labels={"n_tx": "Количество переводов", "sum_kzt": "Оборот, ₸"},
-            color_continuous_scale=["#DDF5E8", THEME["accent"]],
+            color_continuous_scale=[THEME["accent_soft"], THEME["accent"]],
             template=PLOT_TEMPLATE,
         )
         fig.update_layout(coloraxis_showscale=False, margin=dict(l=12, r=12, t=55, b=12))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(polish_chart(fig), width="stretch")
 
     st.markdown('<div class="section-kicker">Структура участников</div>', unsafe_allow_html=True)
     st.subheader("Роли и значимость в сети")
@@ -357,17 +371,33 @@ with overview:
         role_counts = features["role"].value_counts().rename_axis("role").reset_index(name="nodes")
         fig = px.bar(role_counts, x="role", y="nodes", color="role", color_discrete_map=ROLE_COLORS,
                      title="Распределение ролей", template=PLOT_TEMPLATE)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(polish_chart(fig), width="stretch")
     with right:
         fig = px.scatter(features, x="betweenness_pct", y="priority_score", color="role", size="pagerank_pct",
                          hover_name="gid", color_discrete_map=ROLE_COLORS, title="Структурная значимость",
                          template=PLOT_TEMPLATE)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(polish_chart(fig), width="stretch")
     resilience_file = OUT / "resilience.csv"
     if resilience_file.exists():
         resilience = pd.read_csv(resilience_file)
         st.subheader("Устойчивость сети")
-        st.line_chart(resilience.set_index("removed_top_n")[["largest_component_share", "fragmentation"]])
+        resilience_long = resilience.melt(
+            id_vars="removed_top_n",
+            value_vars=["largest_component_share", "fragmentation"],
+            var_name="Показатель",
+            value_name="Значение",
+        )
+        resilience_figure = px.line(
+            resilience_long,
+            x="removed_top_n",
+            y="Значение",
+            color="Показатель",
+            markers=True,
+            labels={"removed_top_n": "Удалено ключевых узлов"},
+            color_discrete_sequence=[THEME["accent"], THEME["accent2"]],
+            template=PLOT_TEMPLATE,
+        )
+        st.plotly_chart(polish_chart(resilience_figure), width="stretch")
 
 with search:
     st.markdown('<div class="section-kicker">Профиль клиента</div>', unsafe_allow_html=True)
@@ -384,9 +414,9 @@ with search:
             for col, label, value in zip(cols, ["Role score", "Priority", "Кластер", "Depth", "In degree", "Out degree"],
                                          [row.role_score, row.priority_score, int(row.cluster_id), row.depth, int(row.in_deg), int(row.out_deg)]):
                 col.metric(label, f"{value:.3f}" if isinstance(value, float) else value)
-            st.dataframe(pd.DataFrame({"Метрика": ["Входящий поток", "Исходящий поток", "PageRank", "Betweenness", "Seed", "Усечение depth"],
+            st.dataframe(themed_table(pd.DataFrame({"Метрика": ["Входящий поток", "Исходящий поток", "PageRank", "Betweenness", "Seed", "Усечение depth"],
                                       "Значение": [kzt(row.in_kzt), kzt(row.out_kzt), f"{row.pagerank:.6f}",
-                                                   f"{row.betweenness:.6f}", bool(row.is_seed), bool(row.truncated_by_depth)]}),
+                                                   f"{row.betweenness:.6f}", bool(row.is_seed), bool(row.truncated_by_depth)]})),
                          hide_index=True, width="stretch")
             st.caption(
                 f"Cycles: {int(row.cycle_count)} · Recurring edges: {int(row.recurring_route_count)} · "
@@ -400,11 +430,11 @@ with search:
 with network_tab:
     st.markdown('<div class="section-kicker">Движение денег</div>', unsafe_allow_html=True)
     st.subheader("Карта движения денег")
-    mode = st.radio("Режим", ["Top-risk", "Ego-network", "Кластер"], horizontal=True)
-    if mode == "Top-risk":
+    mode = st.radio("Режим", ["Высокий риск", "Окрестность клиента", "Группа"], horizontal=True)
+    if mode == "Высокий риск":
         count = st.slider("Число узлов", 20, min(150, len(features)), min(80, len(features)), 10)
         shown = features.nlargest(count, "priority_score")
-    elif mode == "Ego-network":
+    elif mode == "Окрестность клиента":
         selected = st.selectbox("Центральный GID", features.sort_values("priority_score", ascending=False)["gid"])
         radius = st.slider("Радиус", 1, 3, 1)
         graph = nx.from_pandas_edgelist(edges, "source", "target", create_using=nx.DiGraph)
@@ -419,29 +449,47 @@ with network_tab:
     st.iframe(network_uri(shown, edges), height=670)
 
 with priority_tab:
-    st.markdown('<div class="section-kicker">Review queue</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-kicker">Очередь проверки</div>', unsafe_allow_html=True)
     st.subheader("Кого смотреть первым")
     limit = st.radio("Показать", [20, 50], horizontal=True)
     display = features.nlargest(limit, "priority_score").copy()
     display.insert(0, "rank", range(1, len(display) + 1))
-    st.dataframe(display[["rank", "gid", "role", "priority_score", "cluster_id", "evidence"]],
-                 hide_index=True, width="stretch", height=720)
+    queue_export = display[["rank", "gid", "role", "priority_score", "cluster_id", "evidence"]]
+    st.download_button(
+        "Экспортировать очередь в CSV",
+        data=queue_export.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"moneygraph_review_queue_top_{limit}.csv",
+        mime="text/csv",
+        key="export-review-queue",
+    )
+    st.dataframe(themed_table(queue_export), hide_index=True, width="stretch", height=720)
 
 with cluster_tab:
     st.markdown('<div class="section-kicker">Группы клиентов</div>', unsafe_allow_html=True)
     st.subheader("Структура кластеров")
-    cluster_id = st.selectbox("Выберите cluster_id", clusters["cluster_id"].tolist(), key="cluster-explorer")
+    cluster_id = st.selectbox("Номер группы", clusters["cluster_id"].tolist(), key="cluster-explorer")
     cluster = clusters.loc[clusters["cluster_id"].eq(cluster_id)].iloc[0]
     cols = st.columns(3)
     cols[0].metric("Узлы", int(cluster.n_nodes))
-    cols[1].metric("Seed", int(cluster.n_seed))
+    cols[1].metric("Исходные клиенты", int(cluster.n_seed))
     cols[2].metric("Внутренний оборот", kzt(cluster.sum_kzt_internal))
     st.info(cluster.hypothesis)
     subset = features[features["cluster_id"].eq(cluster_id)]
     counts = subset["role"].value_counts().rename_axis("role").reset_index(name="nodes")
-    st.plotly_chart(px.bar(counts, x="role", y="nodes", color="role", color_discrete_map=ROLE_COLORS,
-                           template=PLOT_TEMPLATE), width="stretch")
-    st.dataframe(subset.nlargest(10, "priority_score")[["gid", "role", "priority_score", "evidence"]], hide_index=True)
+    cluster_figure = px.bar(
+        counts, x="role", y="nodes", color="role", color_discrete_map=ROLE_COLORS,
+        template=PLOT_TEMPLATE,
+    )
+    st.plotly_chart(polish_chart(cluster_figure), width="stretch")
+    cluster_export = subset.sort_values("priority_score", ascending=False)
+    st.download_button(
+        "Экспортировать группу в CSV",
+        data=cluster_export.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"moneygraph_group_{int(cluster_id)}.csv",
+        mime="text/csv",
+        key="export-selected-cluster",
+    )
+    st.dataframe(themed_table(cluster_export.head(10)[["gid", "role", "priority_score", "evidence"]]), hide_index=True)
 
 with patterns_tab:
     st.markdown('<div class="section-kicker">Финансовые сигналы</div>', unsafe_allow_html=True)
@@ -468,7 +516,7 @@ with patterns_tab:
         if cycles.empty:
             st.info("Циклы заданной длины не обнаружены.")
         else:
-            st.dataframe(cycles.head(100), hide_index=True, width="stretch", height=420)
+            st.dataframe(themed_table(cycles.head(100)), hide_index=True, width="stretch", height=420)
             selected_cycle = st.selectbox("Показать цикл", cycles["cycle_id"].tolist())
             cycle_row = cycles.loc[cycles["cycle_id"].eq(selected_cycle)].iloc[0]
             cycle_gids = str(cycle_row.gids).split(" → ")[:-1]
@@ -485,30 +533,30 @@ with patterns_tab:
                 hover_data=["source", "target", "n_tx"], template=PLOT_TEMPLATE,
                 title="Регулярность маршрутов",
             )
-            st.plotly_chart(fig, width="stretch")
-            st.dataframe(recurring.head(100), hide_index=True, width="stretch", height=420)
+            st.plotly_chart(polish_chart(fig), width="stretch")
+            st.dataframe(themed_table(recurring.head(100)), hide_index=True, width="stretch", height=420)
 
     with chain_view:
         st.caption("Устойчивые двухзвенные маршруты A→B→C, повторяющиеся минимум в два разных дня.")
-        st.dataframe(chains.head(100), hide_index=True, width="stretch", height=480)
+        st.dataframe(themed_table(chains.head(100)), hide_index=True, width="stretch", height=480)
 
     with sync_view:
         st.caption("Дни, когда не менее трёх разных плательщиков направляли средства одному получателю.")
-        st.dataframe(synchronous.head(100), hide_index=True, width="stretch", height=480)
+        st.dataframe(themed_table(synchronous.head(100)), hide_index=True, width="stretch", height=480)
 
     with structuring_view:
         st.caption(
             "Объяснимые сигналы дробления выше наблюдаемого порога 5 000 KZT: несколько операций и контрагентов, "
             "сходные, округлённые или близкие к порогу суммы. Это гипотеза для проверки."
         )
-        st.dataframe(structuring.head(100), hide_index=True, width="stretch", height=480)
+        st.dataframe(themed_table(structuring.head(100)), hide_index=True, width="stretch", height=480)
 
     with anomaly_view:
         st.caption(
             "TOP-5% composite: временные сигналы, синхронные входы, дробление, recurring chains, cycles "
             "и отклонение от профиля своего depth."
         )
-        st.dataframe(anomalies, hide_index=True, width="stretch", height=600)
+        st.dataframe(themed_table(anomalies), hide_index=True, width="stretch", height=600)
 
 with agent_tab:
     st.markdown('<div class="section-kicker">Помощник аналитика</div>', unsafe_allow_html=True)
@@ -576,46 +624,91 @@ with documents_tab:
     st.markdown('<div class="section-kicker">Материалы проверки</div>', unsafe_allow_html=True)
     st.subheader("Документы дела")
     st.caption(
-        "Добавляйте внешние PDF, DOCX, TXT, Markdown, CSV и JSON. Файлы сохраняются локально, "
+        "Добавляйте PDF, DOCX, TXT, Markdown, CSV, JSON, XLSX, XLS и Parquet. Файлы сохраняются локально, "
         "не меняют рассчитанные роли или priority score и рассматриваются как непроверенный контекст аналитика."
     )
-    st.info(
-        "Лимит — 15 MB на файл. Одинаковые файлы определяются по SHA-256 и не дублируются. "
-        "Для сканированных PDF без текстового слоя требуется предварительный OCR."
-    )
     document_store = CaseDocumentStore(DOCUMENT_DIR)
+    st.info(
+        "Лимит — 15 MB на файл. Проверяются расширение, MIME-тип и возможность извлечения данных. "
+        "Сканированные PDF без текстового слоя требуют предварительного OCR."
+    )
+    if "document_failures" not in st.session_state:
+        st.session_state["document_failures"] = []
+
     uploads = st.file_uploader(
-        "Выберите документы",
-        type=["pdf", "docx", "txt", "md", "csv", "json"],
+        "Загрузка документов",
         accept_multiple_files=True,
         key="case-document-upload",
-        help="Документы хранятся только в локальной папке case_documents, исключённой из Git.",
+        help="Можно выбрать несколько файлов или перетащить их в область загрузки.",
     )
     if st.button(
-        "Добавить в досье",
+        "Обработать и добавить",
         type="primary",
         disabled=not uploads,
         key="add-case-documents",
+        help="Кнопка станет доступна после выбора хотя бы одного файла.",
     ):
         known_gids = set(features["gid"].astype(str))
         added = 0
+        failures = []
         for uploaded in uploads:
-            try:
-                record, created = document_store.add_document(
-                    uploaded.name, uploaded.getvalue(), known_gids=known_gids
-                )
-                if created:
-                    added += 1
-                    st.success(
-                        f"{record.filename}: добавлен; извлечено {record.text_chars:,} символов, "
-                        f"GID из графа — {len(record.detected_gids)}."
+            content = uploaded.getvalue()
+            with st.status(f"Обработка: {uploaded.name}", expanded=False) as status:
+                try:
+                    record, created = document_store.add_document(
+                        uploaded.name,
+                        content,
+                        known_gids=known_gids,
+                        mime_type=uploaded.type or "",
                     )
-                else:
-                    st.info(f"{record.filename}: такой файл уже есть в досье.")
-            except ValueError as document_error:
-                st.error(f"{uploaded.name}: {document_error}")
+                    if created:
+                        added += 1
+                        status.update(label=f"Готово: {record.filename}", state="complete")
+                        st.success(
+                            f"{record.filename}: добавлен, извлечено {record.text_chars:,} символов; "
+                            f"GID из графа — {len(record.detected_gids)}."
+                        )
+                    else:
+                        status.update(label=f"Уже загружен: {record.filename}", state="complete")
+                        st.info(f"{record.filename}: дубликат не добавлен.")
+                except ValueError as document_error:
+                    status.update(label=f"Ошибка: {uploaded.name}", state="error")
+                    failure = {
+                        "filename": uploaded.name,
+                        "content": content,
+                        "mime_type": uploaded.type or "",
+                        "error": str(document_error),
+                    }
+                    failures.append(failure)
+                    st.error(f"{uploaded.name}: {document_error}")
+        st.session_state["document_failures"] = failures
         if added:
             load_agent.clear()
+
+    if st.session_state["document_failures"]:
+        st.markdown("#### Необработанные файлы")
+        st.caption("Исправьте исходный файл или повторите обработку, если ошибка была временной.")
+        for failure_index, failure in enumerate(list(st.session_state["document_failures"])):
+            failure_columns = st.columns([5, 1])
+            failure_columns[0].error(f"{failure['filename']}: {failure['error']}")
+            if failure_columns[1].button(
+                "Повторить",
+                key=f"retry-document-{failure_index}",
+                width="stretch",
+            ):
+                try:
+                    document_store.add_document(
+                        failure["filename"],
+                        failure["content"],
+                        known_gids=set(features["gid"].astype(str)),
+                        mime_type=failure["mime_type"],
+                    )
+                    st.session_state["document_failures"].pop(failure_index)
+                    load_agent.clear()
+                    st.rerun()
+                except ValueError as retry_error:
+                    st.session_state["document_failures"][failure_index]["error"] = str(retry_error)
+                    st.error(f"Повторная обработка не выполнена: {retry_error}")
 
     documents = document_store.list_documents()
     st.markdown("#### Реестр документов")
@@ -627,14 +720,80 @@ with documents_tab:
                     "Формат": item.extension.removeprefix(".").upper(),
                     "Размер, KB": round(item.size_bytes / 1024, 1),
                     "Добавлен, UTC": item.added_at.replace("T", " ")[:19],
+                    "Статус": item.status,
                     "Символов": item.text_chars,
                     "GID из графа": len(item.detected_gids),
-                    "SHA-256": item.sha256[:12] + "…",
                 }
                 for item in documents
             ]
         )
-        st.dataframe(registry, hide_index=True, width="stretch")
+        st.dataframe(themed_table(registry), hide_index=True, width="stretch")
+
+        document_by_label = {
+            f"{item.filename} · {item.extension.removeprefix('.').upper()} · {item.added_at[:10]}": item
+            for item in documents
+        }
+        selected_label = st.selectbox(
+            "Выберите документ для действий",
+            list(document_by_label),
+            key="selected-case-document",
+        )
+        selected_document = document_by_label[selected_label]
+        try:
+            original_record, original_bytes = document_store.get_original(selected_document.document_id)
+        except FileNotFoundError as original_error:
+            st.error(str(original_error))
+            original_record, original_bytes = selected_document, b""
+
+        action_open, action_download, action_delete = st.columns(3)
+        if action_open.button(
+            "Открыть",
+            key=f"open-document-{selected_document.document_id}",
+            width="stretch",
+        ):
+            st.session_state["open_document_id"] = selected_document.document_id
+        action_download.download_button(
+            "Скачать оригинал",
+            data=original_bytes,
+            file_name=original_record.filename,
+            mime=original_record.mime_type or "application/octet-stream",
+            disabled=not original_bytes,
+            key=f"download-document-{selected_document.document_id}",
+            width="stretch",
+        )
+        with action_delete.popover("Удалить", width="stretch"):
+            st.warning(f"Документ «{selected_document.filename}» будет удалён из локального досье.")
+            if st.button(
+                "Подтвердить удаление",
+                type="primary",
+                key=f"confirm-delete-document-{selected_document.document_id}",
+                width="stretch",
+            ):
+                document_store.delete_document(selected_document.document_id)
+                if st.session_state.get("open_document_id") == selected_document.document_id:
+                    st.session_state.pop("open_document_id", None)
+                load_agent.clear()
+                st.toast(f"Документ «{selected_document.filename}» удалён")
+                st.rerun()
+
+        if st.session_state.get("open_document_id"):
+            try:
+                opened_record = document_store.get_record(st.session_state["open_document_id"])
+                opened_text = document_store.get_text(opened_record.document_id)
+                st.markdown(f"#### Просмотр: {opened_record.filename}")
+                st.text_area(
+                    "Извлечённое содержимое",
+                    value=opened_text[:30_000],
+                    height=300,
+                    disabled=True,
+                    key=f"document-preview-{opened_record.document_id}",
+                    help="Для быстрого просмотра показаны первые 30 000 символов.",
+                )
+                if len(opened_text) > 30_000:
+                    st.caption("Показан сокращённый текст. Полный оригинал доступен по кнопке скачивания.")
+            except (FileNotFoundError, ValueError) as preview_error:
+                st.error(f"Не удалось открыть документ: {preview_error}")
+
         document_query = st.text_input(
             "Поиск по документам",
             placeholder="Введите GID, имя, организацию или фрагмент текста",
@@ -652,7 +811,7 @@ with documents_tab:
             else:
                 st.warning("Совпадений в извлечённом тексте не найдено.")
     else:
-        st.warning("В досье пока нет документов. Добавьте первый файл выше.")
+        st.info("В досье пока нет документов. Перетащите первый файл в область загрузки выше.")
 
     st.caption(
         "В локальном режиме помощник использует найденные фрагменты без передачи данных наружу. "
