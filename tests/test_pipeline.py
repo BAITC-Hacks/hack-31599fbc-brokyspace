@@ -37,13 +37,35 @@ def test_dataset_limitations_are_enforced(pipeline_output):
 def test_bonus_outputs(pipeline_output):
     cycles = pd.read_csv(pipeline_output / "cycles.csv")
     routes = pd.read_csv(pipeline_output / "recurring_routes.csv")
+    chains = pd.read_csv(pipeline_output / "recurring_chains.csv")
+    synchronous = pd.read_csv(pipeline_output / "synchronous_inflows.csv")
+    structuring = pd.read_csv(pipeline_output / "structuring_events.csv")
     anomalies = pd.read_csv(pipeline_output / "anomalies.csv")
+    completeness = pd.read_csv(pipeline_output / "completeness.csv")
     metadata = json.loads((pipeline_output / "metadata.json").read_text(encoding="utf-8"))
     assert not cycles.empty and cycles["length"].between(2, 6).all()
     assert not routes.empty and routes["active_days"].ge(2).all()
+    assert not chains.empty and chains["active_days"].ge(2).all()
+    assert not synchronous.empty and synchronous["distinct_senders"].ge(3).all()
+    assert not structuring.empty and structuring["n_tx"].ge(3).all()
     assert not anomalies.empty and anomalies["reason"].str.strip().ne("").all()
+    assert len(completeness) == 2248
+    assert completeness["completeness_score"].between(0, 1).all()
+    assert completeness["recommended_request"].str.startswith("Запросить:").all()
     assert metadata["cycles_truncated"] is False
     assert metadata["runtime_seconds"] < 300
+
+
+def test_depth_peer_and_structuring_features(pipeline_output):
+    features = pd.read_parquet(pipeline_output / "node_features.parquet")
+    required = {
+        "synchronous_in_score", "recurring_chain_count", "structuring_event_count",
+        "depth_peer_anomaly_score", "aml_anomaly_score", "completeness_score",
+        "observed_gaps", "recommended_request",
+    }
+    assert required.issubset(features.columns)
+    assert features["depth_peer_anomaly_score"].between(0, 1).all()
+    assert features["aml_anomaly_score"].between(0, 1).all()
 
 
 def test_evidence_mentions_real_numbers(pipeline_output):

@@ -46,6 +46,12 @@ def explain(row: pd.Series) -> str:
         patterns.append(f"циклов {int(row.cycle_count)}")
     if int(row.get("recurring_route_count", 0)):
         patterns.append(f"повторных маршрутов {int(row.recurring_route_count)}")
+    if int(row.get("recurring_chain_count", 0)):
+        patterns.append(f"цепочек A→B→C {int(row.recurring_chain_count)}")
+    if int(row.get("structuring_event_count", 0)):
+        patterns.append(f"дроблений {int(row.structuring_event_count)}")
+    if int(row.get("synchronous_in_days", 0)):
+        patterns.append(f"синхронных дней {int(row.synchronous_in_days)}")
     if patterns:
         text += " Паттерны: " + ", ".join(patterns) + "."
     if bool(row.truncated_by_depth):

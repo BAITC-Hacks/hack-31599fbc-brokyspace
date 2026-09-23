@@ -23,11 +23,20 @@ def test_agent_inspects_exact_gid_without_hallucination(pipeline_output):
     assert gid in answer.text
     assert "Рекомендация" in answer.text
     assert "не доказательство" in answer.text
+    assert "Полнота наблюдения" in answer.text
+    assert "Следующий запрос" in answer.text
 
 
 def test_agent_rejects_unknown_gid(pipeline_output):
     answer = AMLAnalystAgent(pipeline_output).ask("Проверь GID 999999999999999999")
     assert "отсутствует" in answer.text
+
+
+def test_agent_reports_completeness_gaps(pipeline_output):
+    answer = AMLAnalystAgent(pipeline_output).ask("Каких данных не хватает и какой следующий запрос?")
+    assert "Наименее полно наблюдаемые узлы" in answer.text
+    assert "Запросить:" in answer.text
+    assert answer.sources == ("completeness.csv",)
 
 
 def test_openai_agent_wiring_without_network(pipeline_output, monkeypatch):

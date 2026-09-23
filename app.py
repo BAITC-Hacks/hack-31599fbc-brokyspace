@@ -200,9 +200,13 @@ with search:
                                                    f"{row.betweenness:.6f}", bool(row.is_seed), bool(row.truncated_by_depth)]}),
                          hide_index=True, width="stretch")
             st.caption(
-                f"Cycles: {int(row.cycle_count)} · Recurring routes: {int(row.recurring_route_count)} · "
-                f"Temporal anomaly: {row.temporal_anomaly_score:.3f}"
+                f"Cycles: {int(row.cycle_count)} · Recurring edges: {int(row.recurring_route_count)} · "
+                f"A→B→C chains: {int(row.recurring_chain_count)} · AML anomaly: {row.aml_anomaly_score:.3f}"
             )
+            st.subheader("Полнота данных и следующий запрос")
+            st.progress(float(row.completeness_score), text=f"Наблюдаемая полнота: {row.completeness_score:.0%}")
+            st.write(f"**Белые пятна:** {row.observed_gaps}")
+            st.write(f"**Дальнейшее действие:** {row.recommended_request}")
 
 with network_tab:
     mode = st.radio("Режим", ["Top-risk", "Ego-network", "Кластер"], horizontal=True)
@@ -247,12 +251,20 @@ with cluster_tab:
 with patterns_tab:
     cycles = pd.read_csv(OUT / "cycles.csv")
     recurring = pd.read_csv(OUT / "recurring_routes.csv")
+    chains = pd.read_csv(OUT / "recurring_chains.csv")
+    synchronous = pd.read_csv(OUT / "synchronous_inflows.csv")
+    structuring = pd.read_csv(OUT / "structuring_events.csv")
     anomalies = pd.read_csv(OUT / "anomalies.csv")
-    metrics = st.columns(3)
+    metrics = st.columns(6)
     metrics[0].metric("Циклы 2–6", f"{len(cycles):,}")
-    metrics[1].metric("Повторные маршруты", f"{len(recurring):,}")
-    metrics[2].metric("Аномальные узлы", f"{len(anomalies):,}")
-    cycle_view, route_view, anomaly_view = st.tabs(["Циклические потоки", "Recurring routes", "Temporal anomalies"])
+    metrics[1].metric("Повторные связи", f"{len(recurring):,}")
+    metrics[2].metric("Цепочки A→B→C", f"{len(chains):,}")
+    metrics[3].metric("Синхронные входы", f"{len(synchronous):,}")
+    metrics[4].metric("Дробление", f"{len(structuring):,}")
+    metrics[5].metric("Аномальные узлы", f"{len(anomalies):,}")
+    cycle_view, route_view, chain_view, sync_view, structuring_view, anomaly_view = st.tabs(
+        ["Циклические потоки", "Recurring edges", "Цепочки A→B→C", "Синхронные входы", "Дробление", "AML anomalies"]
+    )
 
     with cycle_view:
         st.caption("Направленные циклы длиной 2–6; score учитывает bottleneck-сумму, длину и наличие seed.")
@@ -279,8 +291,26 @@ with patterns_tab:
             st.plotly_chart(fig, width="stretch")
             st.dataframe(recurring.head(100), hide_index=True, width="stretch", height=420)
 
+    with chain_view:
+        st.caption("Устойчивые двухзвенные маршруты A→B→C, повторяющиеся минимум в два разных дня.")
+        st.dataframe(chains.head(100), hide_index=True, width="stretch", height=480)
+
+    with sync_view:
+        st.caption("Дни, когда не менее трёх разных плательщиков направляли средства одному получателю.")
+        st.dataframe(synchronous.head(100), hide_index=True, width="stretch", height=480)
+
+    with structuring_view:
+        st.caption(
+            "Объяснимые сигналы дробления выше наблюдаемого порога 5 000 KZT: несколько операций и контрагентов, "
+            "сходные, округлённые или близкие к порогу суммы. Это гипотеза для проверки."
+        )
+        st.dataframe(structuring.head(100), hide_index=True, width="stretch", height=480)
+
     with anomaly_view:
-        st.caption("TOP-5% composite: всплески активности, rapid forwarding, recurring routes и cycles.")
+        st.caption(
+            "TOP-5% composite: временные сигналы, синхронные входы, дробление, recurring chains, cycles "
+            "и отклонение от профиля своего depth."
+        )
         st.dataframe(anomalies, hide_index=True, width="stretch", height=600)
 
 with agent_tab:
@@ -350,7 +380,8 @@ with method_tab:
     - Узел `depth=4` без исходящих связей находится на границе выгрузки и не считается надёжным terminal.
     - У seed неполон входящий поток, поэтому обычный pass-through для них отключён.
     - Ground truth ролей отсутствует: результат — прозрачная аналитическая гипотеза для проверки человеком.
-    - Bonus-паттерны: направленные циклы длиной 2–6, многодневные recurring routes, rapid forwarding и всплески активности.
+    - Bonus-паттерны: циклы 2–6, recurring edges и A→B→C chains, rapid forwarding, синхронные входы, дробление и depth-peer anomalies.
+    - Для каждого GID рассчитана полнота наблюдения, перечислены белые пятна и следующий рекомендуемый запрос аналитику.
     - AI-аналитик использует read-only инструменты над результатами pipeline; локальный режим не требует API и не передаёт данные наружу.
     """)
     st.caption(f"Pipeline runtime: {metadata['runtime_seconds']:.2f}s")

@@ -22,8 +22,9 @@ def score_roles(features: pd.DataFrame, min_signal: float = 0.38) -> pd.DataFram
     rapid_pct = _pct(frame["rapid_pass_through"])
 
     frame["consolidator_score"] = (
-        0.23 * frame["in_deg_pct"] + 0.20 * frame["in_kzt_pct"] + 0.18 * frame["authority_pct"]
-        + 0.15 * _pct(frame["seed_sources"]) + 0.12 * fan_in + 0.12 * retained
+        0.20 * frame["in_deg_pct"] + 0.18 * frame["in_kzt_pct"] + 0.16 * frame["authority_pct"]
+        + 0.14 * _pct(frame["seed_sources"]) + 0.10 * fan_in + 0.10 * retained
+        + 0.12 * frame["synchronous_in_score"]
     )
     frame["distributor_score"] = (
         0.27 * frame["out_deg_pct"] + 0.20 * frame["out_tx_pct"] + 0.18 * frame["hub_pct"]

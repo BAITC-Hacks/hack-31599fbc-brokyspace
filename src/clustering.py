@@ -63,9 +63,18 @@ def build_cluster_report(features: pd.DataFrame, edges: pd.DataFrame) -> pd.Data
         money = float(turnover.get(cluster_id, 0.0))
         dominant = roles.most_common(2)
         role_text = ", ".join(f"{role}: {count}" for role, count in dominant)
+        leader = dominant[0][0] if dominant else "peripheral"
+        purpose = {
+            "consolidator": "возможный контур сбора и аккумуляции средств",
+            "distributor": "возможный контур веерного распределения средств",
+            "transit": "возможный транзитный контур быстрого перенаправления",
+            "terminal": "возможный контур конечных получателей",
+            "coordinator": "возможный координирующий или межкластерный контур",
+            "peripheral": "периферийная группа без выраженной общей функции",
+        }[leader]
         hypothesis = (
-            f"Кластер из {len(group)} узлов: seed={n_seed}, {role_text}; "
-            f"внутренний оборот {money / 1_000_000:.2f} млн KZT."
+            f"Гипотеза: {purpose}. Узлов={len(group)}, seed={n_seed}, роли: {role_text}; "
+            f"внутренний оборот {money / 1_000_000:.2f} млн KZT. Требуется проверка аналитиком."
         )
         rows.append(
             {

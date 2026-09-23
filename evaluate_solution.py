@@ -16,6 +16,10 @@ def evaluate(output_dir: Path) -> dict[str, object]:
     features = pd.read_parquet(output_dir / "node_features.parquet")
     cycles = pd.read_csv(output_dir / "cycles.csv")
     routes = pd.read_csv(output_dir / "recurring_routes.csv")
+    chains = pd.read_csv(output_dir / "recurring_chains.csv")
+    synchronous = pd.read_csv(output_dir / "synchronous_inflows.csv")
+    structuring = pd.read_csv(output_dir / "structuring_events.csv")
+    completeness = pd.read_csv(output_dir / "completeness.csv")
     metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
     answer = AMLAnalystAgent(output_dir).ask("Кого из 2248 клиентов смотреть первым и почему?")
     checks = {
@@ -28,6 +32,11 @@ def evaluate(output_dir: Path) -> dict[str, object]:
         "depth_truncation_safe": not features.loc[features["truncated_by_depth"], "role"].eq("terminal").any(),
         "seed_pass_through_safe": features.loc[features["is_seed"], "pass_through"].eq(0).all(),
         "bonus_patterns_present": len(cycles) > 0 and len(routes) > 0 and metadata["cycles_truncated"] is False,
+        "recurring_chains_present": len(chains) > 0 and chains["active_days"].ge(2).all(),
+        "synchronous_inflows_present": len(synchronous) > 0 and synchronous["distinct_senders"].ge(3).all(),
+        "structuring_signals_present": len(structuring) > 0 and structuring["structuring_score"].between(0, 1).all(),
+        "depth_peer_anomaly_present": features["depth_peer_anomaly_score"].between(0, 1).all(),
+        "completeness_actionable": len(completeness) == 2248 and completeness["recommended_request"].str.strip().ne("").all(),
         "runtime_under_5_minutes": float(metadata["runtime_seconds"]) < 300,
         "agent_grounded": "priority=" in answer.text and len(answer.sources) > 0,
     }

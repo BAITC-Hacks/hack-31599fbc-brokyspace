@@ -13,12 +13,13 @@ data/*.parquet
   → src/data.py           чтение, приведение схемы, проверки
   → src/graph.py          directed weighted graph
   → src/features.py       flow + PageRank/HITS/betweenness/seed
-  → src/temporal.py       скорость перенаправления и всплески
-  → src/patterns.py       cycles + recurring routes + anomalies
+  → src/temporal.py       forwarding + bursts + synchronous inflows
+  → src/patterns.py       cycles + recurring edges/chains + structuring + anomalies
   → src/clustering.py     Louvain и межкластерные мосты
   → src/roles.py          пять role scores + peripheral
   → src/priority.py       AML priority score
   → src/evidence.py       объяснения с фактическими числами
+  → src/completeness.py   белые пятна + следующий запрос аналитику
   → src/agent.py          read-only AI AML analyst
   → src/validation.py     контракт выходных данных
   → out/*                 CSV, parquet, metadata
@@ -79,16 +80,16 @@ OPENAI_API_KEY = "sk-proj-..."
 
 ## 7. Temporal analysis
 
-По транзакциям считаются активные входящие/исходящие дни, медианная задержка между наблюдаемым входом и следующим исходящим событием, доля перенаправлений до 24/48 часов и всплеск дневной активности. Поиск предыдущего входа сделан через `merge_asof`, без квадратичного сопоставления транзакций.
+По транзакциям считаются активные входящие/исходящие дни, медианная задержка между наблюдаемым входом и следующим исходящим событием, доля перенаправлений до 24/48 часов, всплеск дневной активности и синхронная консолидация от трёх и более разных плательщиков за день. Поиск предыдущего входа сделан через `merge_asof`, без квадратичного сопоставления транзакций.
 
-Дополнительный `temporal_anomaly_score` объединяет percentile всплеска, rapid forwarding, участие в повторяющихся маршрутах и циклических потоках. Это приоритизация для расследования, а не вероятность нарушения.
+`temporal_anomaly_score` объединяет percentile всплеска, rapid forwarding, синхронные входы, сигналы дробления, повторяющиеся связи/цепочки и циклы. `depth_peer_anomaly_score` сравнивает профиль узла с клиентами того же колена, а итоговый `aml_anomaly_score` объединяет обе оценки. Это приоритизация для расследования, а не вероятность нарушения.
 
 ## 8. Методология ролей
 
 Для каждого узла независимо считаются пять scores в `[0,1]`, затем выбирается самый сильный. Если максимум меньше `0.38`, узел относится к `peripheral`. В формулах `P(x)` — percentile, `R` — observed retention, `B` — наличие входа и выхода, `S` — seed connectivity, `X` — bridge score:
 
 ```text
-consolidator = .23P(in_deg)+.20P(in_kzt)+.18P(authority)+.15P(seed_sources)+.12fan_in+.12R
+consolidator = .20P(in_deg)+.18P(in_kzt)+.16P(authority)+.14P(seed_sources)+.10fan_in+.10R+.12sync
 distributor  = .27P(out_deg)+.20P(out_tx)+.18P(hub)+.18fan_out+.10P(out_kzt)+.07S
 transit      = .27B+.30pass_through+.18P(rapid)+.12same_next_day+.13(1-R)
 terminal     = [.26P(in_kzt)+.18P(in_deg)+.24no_out+.20R+.12(1-P(out_kzt))] × has_input
@@ -106,9 +107,10 @@ coordinator  = .29P(betweenness)+.17P(PageRank)+.12max(P(hub),P(authority))+.22X
 `priority_score` отвечает на другой вопрос: насколько важно проверить узел AML-аналитику.
 
 ```text
-.30 structural importance + .20 non-peripheral role strength
-+.18 seed connectivity + .12 temporal anomaly
-+.10 cluster importance + .10 transaction volume
+.28 structural importance + .18 non-peripheral role strength
++.16 seed connectivity + .14 AML anomaly
++.09 cluster importance + .08 transaction volume
++.04 cycle strength + .03 recurring edge/chain strength
 ```
 
 Структура включает betweenness, PageRank, bridge и HITS. Денежный объём ограничен весом 10%, поэтому крупнейшие клиенты не вытесняют структурно значимые узлы.
@@ -125,11 +127,11 @@ Louvain применяется к взвешенной неориентиров�
 
 `out/nodes_roles.csv`: `gid, role, role_score, cluster_id, priority_score, evidence`.
 
-`out/clusters.csv`: `cluster_id, n_nodes, n_seed, sum_kzt_internal, top_gids, hypothesis`.
+`out/clusters.csv`: `cluster_id, n_nodes, n_seed, sum_kzt_internal, top_gids, hypothesis`; hypothesis формулирует предполагаемую функцию группы и явно требует проверки аналитиком.
 
 `out/top_nodes.csv`: `rank, gid, role, priority_score, why`; минимум 20 строк, убывание priority.
 
-Дополнительно создаются `node_features.parquet`, `graph_edges.parquet`, `resilience.csv`, `cycles.csv`, `recurring_routes.csv`, `anomalies.csv` и `metadata.json`; они питают dashboard и аудит расчётов.
+Дополнительно создаются `node_features.parquet`, `graph_edges.parquet`, `resilience.csv`, `cycles.csv`, `recurring_routes.csv`, `recurring_chains.csv`, `synchronous_inflows.csv`, `structuring_events.csv`, `anomalies.csv`, `completeness.csv` и `metadata.json`; они питают dashboard и аудит расчётов. Три обязательные CSV хранятся в репозитории, остальные воспроизводятся pipeline и публикуются как CI artifact.
 
 ## 14. Dashboard и demo-сценарий
 
@@ -140,7 +142,8 @@ Dashboard рассчитан на пятиминутную демонстрац�
 3. «Поиск GID»: карточка узла с потоками, ролью и evidence.
 4. «Граф»: top-risk, ego-network и кластер; стрелки показывают направление денег, цвет — роль.
 5. «Кластеры»: seed, оборот, роли и автоматически созданная hypothesis.
-6. «Методология»: ограничения данных и отсутствие ground truth.
+6. «AML-паттерны»: cycles, recurring edges/chains, синхронные входы, дробление и depth-peer anomalies.
+7. «Методология»: ограничения данных и отсутствие ground truth.
 
 ### AI AML Analyst
 
@@ -159,13 +162,20 @@ Dashboard рассчитан на пятиминутную демонстрац�
 Также реализованы:
 
 - направленные циклы длиной 2–6 с bottleneck-суммой, наличием seed и `cycle_score`;
-- recurring routes, наблюдаемые в несколько дней, с оценкой cadence regularity;
+- recurring edges и устойчивые цепочки A→B→C, наблюдаемые в несколько дней, с cadence regularity;
 - rapid transit по задержке до 24/48 часов;
-- temporal anomalies по всплескам, скорости перенаправления, циклам и повторным маршрутам.
+- синхронные входы от трёх и более плательщиков за день;
+- explainable structuring-сигналы по нескольким контрагентам, сходным, округлённым или близким к порогу суммам;
+- аномальные профили относительно узлов того же `depth`;
+- temporal/AML anomalies по всем перечисленным сигналам.
 
-Порог recurring routes определяется 75-м percentile среди многодневных связей, а список anomalies — 95-м percentile composite score. Результаты доступны на вкладке «AML-паттерны».
+Порог recurring edges/chains определяется 75-м percentile среди многодневных паттернов, а список anomalies — 95-м percentile composite score. Сигналы дробления видят только операции, прошедшие порог выгрузки 5 000 KZT, и не утверждают наличие нарушения. Результаты доступны на вкладке «AML-паттерны».
 
-## 17. Ограничения
+## 17. Оценка полноты и следующий запрос
+
+`completeness.csv` содержит строку на каждый GID: `completeness_score`, наблюдаемые белые пятна и конкретный `recommended_request`. Оценка снижает полноту для seed с неполным входом, узлов на границе `depth=4`, наблюдаемого дисбаланса и отсутствующих timestamps. В базовые ограничения включены невидимые межбанковские потоки, операции ниже 5 000 KZT, KYC и остатки. Карточка GID и AI-аналитик показывают, какие данные запросить следующими.
+
+## 18. Ограничения
 
 - выборка ограничена четырьмя поколениями обхода;
 - наблюдение преимущественно outgoing и входы seed неполны;
@@ -173,6 +183,6 @@ Dashboard рассчитан на пятиминутную демонстрац�
 - отсутствие timestamps снижает силу temporal-части;
 - PageRank и HITS отражают только наблюдаемую сеть.
 
-## 18. Масштабирование до ~1 млн узлов
+## 19. Масштабирование до ~1 млн узлов
 
 Текущая NetworkX-реализация оптимальна для локального кейса на 2248 узлах. Для миллиона узлов контракт и формулы сохраняются, но exact betweenness заменяется sampling approximation, граф переводится в `igraph`/`graph-tool` или Spark GraphFrames, parquet обрабатывается Polars/DuckDB, Louvain — пакетным Leiden/Louvain, а dashboard читает агрегаты и заранее подготовленные ego-графы. Расчёт остаётся explainable; меняется только backend.

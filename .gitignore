@@ -5,4 +5,7 @@ __pycache__/
 .streamlit/secrets.local.toml
 .env
 .env.*
-out/
+out/*
+!out/nodes_roles.csv
+!out/clusters.csv
+!out/top_nodes.csv

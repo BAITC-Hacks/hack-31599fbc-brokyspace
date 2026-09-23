@@ -18,6 +18,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python run_pipeline.py --data ./data --out ./out
       - run: pytest -q
+      - run: python evaluate_solution.py --out ./out
+      - run: git diff --exit-code -- out/nodes_roles.csv out/clusters.csv out/top_nodes.csv
       - uses: actions/upload-artifact@v4
         if: always()
         with:

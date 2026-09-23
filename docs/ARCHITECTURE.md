@@ -7,14 +7,14 @@ flowchart LR
     C --> D[Graph features]
     B --> E[Temporal features]
     C --> F[Cycles + bridges]
-    E --> G[Recurring routes + anomalies]
+    E --> G[Recurring edges/chains + sync + structuring]
     D --> H[Explainable role engine]
     C --> I[Louvain projection]
     F --> J[Priority score]
     G --> J
     H --> J
     I --> J
-    J --> K[Evidence + validation]
+    J --> K[Evidence + completeness + validation]
     K --> L[CSV / Parquet / metadata]
     L --> M[Streamlit dashboard]
     L --> N[Read-only AML agent]
@@ -29,12 +29,13 @@ flowchart LR
 | `src/data.py` | Schema aliases, типы, ссылки на GID, отрицательные значения |
 | `src/graph.py` | Направленный взвешенный `DiGraph`; undirected projection только для communities |
 | `src/features.py` | Flow metrics, PageRank, HITS, betweenness, components, seed proximity |
-| `src/temporal.py` | Active days, forwarding delay, rapid pass-through, burst |
-| `src/patterns.py` | Cycles 2–6, recurring routes, composite temporal anomaly |
+| `src/temporal.py` | Active days, forwarding delay, rapid pass-through, burst, synchronous inflows |
+| `src/patterns.py` | Cycles 2–6, recurring edges/chains, structuring, depth-peer anomaly |
 | `src/roles.py` | Пять независимых explainable scores и fallback `peripheral` |
 | `src/clustering.py` | Louvain, bridge score, cluster summaries |
 | `src/priority.py` | AML review priority, отдельно от уверенности в роли |
 | `src/evidence.py` | Числовое объяснение роли ≤200 символов |
+| `src/completeness.py` | Белые пятна наблюдения и следующий запрос по каждому GID |
 | `src/agent.py` | Read-only инструменты, ответы аналитику, audit log |
 | `src/validation.py` | Машинные контракты обязательных и bonus outputs |
 | `app.py` | Demo-first интерфейс без бизнес-логики расчётов |
