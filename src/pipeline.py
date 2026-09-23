@@ -12,11 +12,12 @@ from .data import describe_data, load_data
 from .evidence import add_evidence
 from .features import graph_features
 from .graph import build_graph
+from .patterns import add_pattern_features, build_anomaly_report, detect_cycles, detect_recurring_routes
 from .priority import calculate_priority
 from .resilience import analyse_resilience
 from .roles import score_roles
 from .temporal import temporal_features
-from .validation import NODE_COLUMNS, validate_outputs
+from .validation import NODE_COLUMNS, validate_outputs, validate_pattern_outputs
 
 
 def run_pipeline(
@@ -48,6 +49,11 @@ def run_pipeline(
     features = features.merge(temporal, on="gid", how="left")
     tick = stage("temporal_features", tick)
 
+    cycles, cycles_truncated = detect_cycles(graph)
+    recurring_routes = detect_recurring_routes(data.transactions)
+    features = add_pattern_features(features, cycles, recurring_routes)
+    tick = stage("aml_patterns", tick)
+
     communities = detect_communities(graph)
     features = add_cluster_features(features, edges, communities)
     tick = stage("louvain", tick)
@@ -69,7 +75,9 @@ def run_pipeline(
         }
     )
     clusters = build_cluster_report(features, edges)
+    anomalies = build_anomaly_report(features)
     report = validate_outputs(nodes_roles, clusters, top_nodes, expected_nodes=expected_nodes)
+    validate_pattern_outputs(report, cycles, recurring_routes, anomalies)
     tick = stage("validation", tick)
 
     output = Path(output_dir)
@@ -81,13 +89,22 @@ def run_pipeline(
     edges.to_parquet(output / "graph_edges.parquet", index=False)
     resilience = analyse_resilience(graph, features)
     resilience.to_csv(output / "resilience.csv", index=False, encoding="utf-8-sig")
+    cycles.to_csv(output / "cycles.csv", index=False, encoding="utf-8-sig")
+    recurring_routes.to_csv(output / "recurring_routes.csv", index=False, encoding="utf-8-sig")
+    anomalies.to_csv(output / "anomalies.csv", index=False, encoding="utf-8-sig")
 
     runtime = time.perf_counter() - started
     metadata = {
         "runtime_seconds": round(runtime, 3), "stage_seconds": stage_times,
         "eda": eda, "role_distribution": features["role"].value_counts().to_dict(),
-        "clusters": len(clusters), "validation": report.checks,
+        "clusters": len(clusters), "cycles": len(cycles), "cycles_truncated": cycles_truncated,
+        "recurring_routes": len(recurring_routes), "anomalous_nodes": len(anomalies),
+        "validation": report.checks,
     }
     (output / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     logger(f"[export] {runtime:.2f}s total; outputs: {output.resolve()}")
-    return {"features": features, "clusters": clusters, "top_nodes": top_nodes, "metadata": metadata}
+    return {
+        "features": features, "clusters": clusters, "top_nodes": top_nodes,
+        "cycles": cycles, "recurring_routes": recurring_routes, "anomalies": anomalies,
+        "metadata": metadata,
+    }

@@ -37,6 +37,13 @@ def explain(row: pd.Series) -> str:
     else:
         text = (f"Периферийный узел: входящих/исходящих связей {int(row.in_deg)}/{int(row.out_deg)}, "
                 f"оборот {_money(row.in_kzt + row.out_kzt)} KZT; сильной структурной роли нет.")
+    patterns = []
+    if int(row.get("cycle_count", 0)):
+        patterns.append(f"циклов {int(row.cycle_count)}")
+    if int(row.get("recurring_route_count", 0)):
+        patterns.append(f"повторных маршрутов {int(row.recurring_route_count)}")
+    if patterns:
+        text += " Паттерны: " + ", ".join(patterns) + "."
     if bool(row.truncated_by_depth):
         text += " Граница depth=4: исходящий поток может быть усечён."
     return text[:200]

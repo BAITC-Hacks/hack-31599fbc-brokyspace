@@ -9,6 +9,9 @@ ALLOWED_ROLES = {"consolidator", "transit", "distributor", "terminal", "coordina
 NODE_COLUMNS = ["gid", "role", "role_score", "cluster_id", "priority_score", "evidence"]
 CLUSTER_COLUMNS = ["cluster_id", "n_nodes", "n_seed", "sum_kzt_internal", "top_gids", "hypothesis"]
 TOP_COLUMNS = ["rank", "gid", "role", "priority_score", "why"]
+CYCLE_COLUMNS = ["cycle_id", "length", "gids", "sum_kzt_total", "sum_kzt_bottleneck", "contains_seed", "cycle_score"]
+ROUTE_COLUMNS = ["source", "target", "n_tx", "active_days", "span_days", "sum_kzt", "cadence_regularity", "recurrence_score"]
+ANOMALY_COLUMNS = ["gid", "role", "priority_score", "temporal_anomaly_score", "reason"]
 
 
 @dataclass
@@ -37,3 +40,17 @@ def validate_outputs(nodes: pd.DataFrame, clusters: pd.DataFrame, top: pd.DataFr
     report.require(set(TOP_COLUMNS).issubset(top.columns) and len(top) >= 20, "top_nodes.csv содержит не менее 20 строк")
     report.require(top["priority_score"].is_monotonic_decreasing, "TOP отсортирован по priority_score")
     return report
+
+
+def validate_pattern_outputs(
+    report: ValidationReport,
+    cycles: pd.DataFrame,
+    routes: pd.DataFrame,
+    anomalies: pd.DataFrame,
+) -> None:
+    report.require(set(CYCLE_COLUMNS).issubset(cycles.columns), "схема cycles.csv")
+    report.require(set(ROUTE_COLUMNS).issubset(routes.columns), "схема recurring_routes.csv")
+    report.require(set(ANOMALY_COLUMNS).issubset(anomalies.columns), "схема anomalies.csv")
+    report.require(cycles["cycle_score"].between(0, 1).all(), "cycle_score в диапазоне [0,1]")
+    report.require(routes["recurrence_score"].between(0, 1).all(), "recurrence_score в диапазоне [0,1]")
+    report.require(anomalies["temporal_anomaly_score"].between(0, 1).all(), "anomaly score в диапазоне [0,1]")

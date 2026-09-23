@@ -127,8 +127,8 @@ st.markdown('<div class="risk">◈ AML GRAPH INTELLIGENCE</div>', unsafe_allow_h
 st.title("Карта финансовой структуры группы")
 st.caption("Explainable network analytics · directed cash flow · local processing")
 
-overview, search, network_tab, priority_tab, cluster_tab, method_tab = st.tabs(
-    ["Обзор", "Поиск GID", "Граф", "Приоритет", "Кластеры", "Методология"]
+overview, search, network_tab, priority_tab, cluster_tab, patterns_tab, method_tab = st.tabs(
+    ["Обзор", "Поиск GID", "Граф", "Приоритет", "Кластеры", "AML-паттерны", "Методология"]
 )
 
 with overview:
@@ -174,6 +174,10 @@ with search:
                                       "Значение": [kzt(row.in_kzt), kzt(row.out_kzt), f"{row.pagerank:.6f}",
                                                    f"{row.betweenness:.6f}", bool(row.is_seed), bool(row.truncated_by_depth)]}),
                          hide_index=True, width="stretch")
+            st.caption(
+                f"Cycles: {int(row.cycle_count)} · Recurring routes: {int(row.recurring_route_count)} · "
+                f"Temporal anomaly: {row.temporal_anomaly_score:.3f}"
+            )
 
 with network_tab:
     mode = st.radio("Режим", ["Top-risk", "Ego-network", "Кластер"], horizontal=True)
@@ -215,6 +219,45 @@ with cluster_tab:
                            template="plotly_dark"), width="stretch")
     st.dataframe(subset.nlargest(10, "priority_score")[["gid", "role", "priority_score", "evidence"]], hide_index=True)
 
+with patterns_tab:
+    cycles = pd.read_csv(OUT / "cycles.csv")
+    recurring = pd.read_csv(OUT / "recurring_routes.csv")
+    anomalies = pd.read_csv(OUT / "anomalies.csv")
+    metrics = st.columns(3)
+    metrics[0].metric("Циклы 2–6", f"{len(cycles):,}")
+    metrics[1].metric("Повторные маршруты", f"{len(recurring):,}")
+    metrics[2].metric("Аномальные узлы", f"{len(anomalies):,}")
+    cycle_view, route_view, anomaly_view = st.tabs(["Циклические потоки", "Recurring routes", "Temporal anomalies"])
+
+    with cycle_view:
+        st.caption("Направленные циклы длиной 2–6; score учитывает bottleneck-сумму, длину и наличие seed.")
+        if cycles.empty:
+            st.info("Циклы заданной длины не обнаружены.")
+        else:
+            st.dataframe(cycles.head(100), hide_index=True, width="stretch", height=420)
+            selected_cycle = st.selectbox("Показать цикл", cycles["cycle_id"].tolist())
+            cycle_row = cycles.loc[cycles["cycle_id"].eq(selected_cycle)].iloc[0]
+            cycle_gids = str(cycle_row.gids).split(" → ")[:-1]
+            cycle_nodes = features[features["gid"].astype(str).isin(cycle_gids)]
+            components.html(network_html(cycle_nodes, edges), height=500, scrolling=False)
+
+    with route_view:
+        st.caption("Маршруты с повторениями в разные дни; порог определяется 75-м percentile среди многодневных связей.")
+        if recurring.empty:
+            st.info("Повторяющиеся маршруты не обнаружены.")
+        else:
+            fig = px.scatter(
+                recurring, x="active_days", y="recurrence_score", size="sum_kzt", color="cadence_regularity",
+                hover_data=["source", "target", "n_tx"], template="plotly_dark",
+                title="Регулярность маршрутов",
+            )
+            st.plotly_chart(fig, width="stretch")
+            st.dataframe(recurring.head(100), hide_index=True, width="stretch", height=420)
+
+    with anomaly_view:
+        st.caption("TOP-5% composite: всплески активности, rapid forwarding, recurring routes и cycles.")
+        st.dataframe(anomalies, hide_index=True, width="stretch", height=600)
+
 with method_tab:
     st.subheader("Методология и ограничения")
     st.markdown("""
@@ -224,5 +267,6 @@ with method_tab:
     - Узел `depth=4` без исходящих связей находится на границе выгрузки и не считается надёжным terminal.
     - У seed неполон входящий поток, поэтому обычный pass-through для них отключён.
     - Ground truth ролей отсутствует: результат — прозрачная аналитическая гипотеза для проверки человеком.
+    - Bonus-паттерны: направленные циклы длиной 2–6, многодневные recurring routes, rapid forwarding и всплески активности.
     """)
     st.caption(f"Pipeline runtime: {metadata['runtime_seconds']:.2f}s")
